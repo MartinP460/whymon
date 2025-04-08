@@ -56,6 +56,12 @@ rule token = parse
   | "EVENTUALLY" | "F" | "◊"                      { debug "EVENTUALLY"; EVENTUALLY }
   | "GLOBALLY_PAST" | "HISTORICALLY" | "■"        { debug "HISTORICALLY"; HISTORICALLY }
   | "ONCE" | "⧫"                                  { debug "ONCE"; ONCE }
+  | "CNT"                                         { debug "CNT"; CNT }
+  | "SUM"                                         { debug "SUM"; SUM }
+  | "SUP"                                         { debug "SUP"; SUP }
+  | "MIN"                                         { debug "MIN"; MIN }
+  | "<-"                                          { debug "LARROW"; LARROW }
+  | ";"                                           { debug "SEMI"; SEMI }
   | (['(' '['] as l) blank* (digits as i) blank* ',' blank* ((digits | "INFINITY" | "∞" | "*") as j) blank* ([')' ']'] as r)
                                                   { debug "INTERVAL"; INTERVAL (make_interval lexbuf l i j r) }
   | "("                                           { debug "LPA"; LPA }

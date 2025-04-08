@@ -11,6 +11,8 @@
 open Base
 open Pred
 
+type agg_op = Cnt | Sum | Sup | Min
+
 type t =
   | TT
   | FF
@@ -31,6 +33,7 @@ type t =
   | Always of Interval.t * t
   | Since of Interval.t * t * t
   | Until of Interval.t * t * t
+  | Agg of string * agg_op * string * string list * t
 
 val tt: t
 val ff: t
@@ -53,8 +56,9 @@ val since: Interval.t -> t -> t -> t
 val until: Interval.t -> t -> t -> t
 val trigger: Interval.t -> t -> t -> t
 val release: Interval.t -> t -> t -> t
+val agg: string -> agg_op -> string -> string list -> t -> t
 
-val quant_check: string -> t -> unit
+val quant_check: string list -> t -> unit
 
 val fv: t -> (String.t, Base.String.comparator_witness) Base.Set.t
 val check_bindings: t -> bool

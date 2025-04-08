@@ -11,6 +11,8 @@
 open Base
 open Pred
 
+type agg_op = Cnt | Sum | Sup | Min
+
 type t =
   | TT
   | FF
@@ -31,6 +33,7 @@ type t =
   | Always of Interval.t * t
   | Since of Interval.t * t * t
   | Until of Interval.t * t * t
+  | Agg of string * agg_op * string * string list * t
 
 let tt = TT
 let ff = FF
@@ -51,36 +54,41 @@ let historically i f = Historically (i, f)
 let always i f = Always (i, f)
 let since i f g = Since (i, f, g)
 let until i f g = Until (i, f, g)
+let agg y op t gs f = Agg (y, op, t, gs, f)
 
 (* Rewriting of non-native operators *)
 let trigger i f g = Neg (Since (i, Neg (f), Neg (g)))
 let release i f g = Neg (Until (i, Neg (f), Neg (g)))
 
-(* Checks whether x occur in f *)
+(* Checks whether all x's occur in f *)
 (* TODO: Merge this function and check_bindings *)
-let quant_check x f =
-  let rec quant_check_rec = function
+let quant_check xs f =
+  let rec quant_check_rec x = function
   | TT | FF -> false
   | EqConst (y, _) -> String.equal x y
   | Predicate (_, trms) -> List.exists trms ~f:(fun y -> Term.equal (Var x) y)
   | Exists (_, f)
-    | Forall (_, f) -> quant_check_rec f
+    | Forall (_, f) -> quant_check_rec x f
   | Neg f
     | Prev (_, f)
     | Once (_, f)
     | Historically (_, f)
     | Eventually (_, f)
     | Always (_, f)
-    | Next (_, f) -> quant_check_rec f
+    | Next (_, f) -> quant_check_rec x f
   | And (f1, f2)
     | Or (f1, f2)
     | Imp (f1, f2)
     | Iff (f1, f2)
     | Since (_, f1, f2)
-    | Until (_, f1, f2) -> quant_check_rec f1 || quant_check_rec f2 in
-  if not (quant_check_rec f) then
-    raise (Invalid_argument (Printf.sprintf "bound variable %s does not appear in subformula" x))
+    | Until (_, f1, f2) -> quant_check_rec x f1 || quant_check_rec x f2
+  | Agg (_, _, _, _, f) -> quant_check_rec x f in
+  let unbound_var = List.find xs ~f:(fun x -> not (quant_check_rec x f)) in
+  match unbound_var with
+    | Some x -> raise (Invalid_argument (Printf.sprintf "bound variable %s does not appear in subformula" x))
+    | None -> ()
 
+(* Checks whether two operators are directly equal. *)
 let equal x y = match x, y with
   | TT, TT | FF, FF -> true
   | EqConst (x, _), EqConst (x', _) -> String.equal x x'
@@ -100,8 +108,10 @@ let equal x y = match x, y with
     | Always (i, f), Always (i', f') -> Interval.equal i i' && phys_equal f f'
   | Since (i, f, g), Since (i', f', g')
     | Until (i, f, g), Until (i', f', g') -> Interval.equal i i' && phys_equal f f' && phys_equal g g'
+  | Agg (y, op, t, gs, f), Agg (y', op', t', gs', f') -> String.equal y y' && (match op, op' with Cnt, Cnt | Sum, Sum | Sup, Sup | Min, Min -> true | _ -> false) && String.equal t t' && List.equal String.equal gs gs' && phys_equal f f'
   | _ -> false
 
+(* Returns all free variables in a formula. *)
 let rec fv = function
   | TT | FF -> Set.empty (module String)
   | EqConst (x, _) -> Set.of_list (module String) [x]
@@ -121,7 +131,9 @@ let rec fv = function
     | Iff (f1, f2)
     | Since (_, f1, f2)
     | Until (_, f1, f2) -> Set.union (fv f1) (fv f2)
+  | Agg (y, _, _, gs, _) -> Set.add (Set.of_list (module String) gs) y
 
+(* Checks whether all variables are bound. *)
 let check_bindings f =
   let fv_f = fv f in
   let rec check_bindings_rec bound_vars = function
@@ -136,7 +148,8 @@ let check_bindings f =
       | Historically (_, f)
       | Eventually (_, f)
       | Always (_, f)
-      | Next (_, f) -> check_bindings_rec bound_vars f
+      | Next (_, f)
+      | Agg (_, _, _, _, f) -> check_bindings_rec bound_vars f
     | And (f1, f2)
       | Or (f1, f2)
       | Imp (f1, f2)
@@ -166,6 +179,7 @@ let rec hp = function
   | Eventually (_, f)
     | Always (_, f)
     | Next (_, f) -> hp f
+  | Agg (_, _, _, _, f) -> hp f
   | Since (_, f1, f2) -> max (hp f1) (hp f2) + 1
   | Until (_, f1, f2) -> max (hp f1) (hp f2)
 
@@ -188,11 +202,13 @@ let rec hf = function
   | Eventually (_, f)
     | Always (_, f)
     | Next (_, f) -> hf f + 1
+  | Agg (_, _, _, _, f) -> hf f
   | Since (_, f1, f2) -> max (hf f1) (hf f2)
   | Until (_, f1, f2) -> max (hf f1) (hf f2) + 1
 
 let height f = hp f + hf f
 
+(* Returns the immediate subformulas of a formula. *)
 let immediate_subfs = function
   | TT
     | FF
@@ -206,7 +222,8 @@ let immediate_subfs = function
     | Once (_, f)
     | Eventually (_, f)
     | Historically (_, f)
-    | Always (_, f) -> [f]
+    | Always (_, f)
+    | Agg (_, _, _, _, f) -> [f]
   | And (f, g)
     | Or (f, g)
     | Imp (f, g)
@@ -214,9 +231,11 @@ let immediate_subfs = function
   | Since (_, f, g)
     | Until (_, f, g) -> [f; g]
 
+(* Returns subformulas of a formula using bredth-first search. *)
 let rec subfs_bfs xs =
   xs @ (List.concat (List.map xs ~f:(fun x -> subfs_bfs (immediate_subfs x))))
 
+(* Returns subformulas of a formula using depth-first search. *)
 let rec subfs_dfs h = match h with
   | TT | FF | EqConst _ | Predicate _ -> [h]
   | Neg f -> [h] @ (subfs_dfs f)
@@ -232,6 +251,7 @@ let rec subfs_dfs h = match h with
   | Eventually (_, f) -> [h] @ (subfs_dfs f)
   | Historically (_, f) -> [h] @ (subfs_dfs f)
   | Always (_, f) -> [h] @ (subfs_dfs f)
+  | Agg (_, _, _, _, f) -> [h] @ (subfs_dfs f)
   | Since (_, f, g) -> [h] @ (subfs_dfs f) @ (subfs_dfs g)
   | Until (_, f, g) -> [h] @ (subfs_dfs f) @ (subfs_dfs g)
 
@@ -247,7 +267,8 @@ let subfs_scope h i =
       | Once (_, f)
       | Eventually (_, f)
       | Historically (_, f)
-      | Always (_, f) -> let (i', subfs_f) = subfs_scope_rec f (i+1) in
+      | Always (_, f)
+      | Agg (_, _, _, _, f) -> let (i', subfs_f) = subfs_scope_rec f (i+1) in
                          (i', [(i, (List.map subfs_f ~f:fst, []))] @ subfs_f)
     | And (f, g)
       | Or (f, g)
@@ -260,13 +281,15 @@ let subfs_scope h i =
                                   @ subfs_f @ subfs_g) in
   snd (subfs_scope_rec h i)
 
+(* Returns all predicates in a formula. *)
 let rec preds = function
   | TT | FF | EqConst _ -> []
   | Predicate (r, trms) -> [Predicate (r, trms)]
   | Neg f | Exists (_, f) | Forall (_, f)
     | Next (_, f) | Prev (_, f)
     | Once (_, f) | Historically (_, f)
-    | Eventually (_, f) | Always (_, f) -> preds f
+    | Eventually (_, f) | Always (_, f) 
+    | Agg (_, _, _, _, f) -> preds f
   | And (f1, f2) | Or (f1, f2)
     | Imp (f1, f2) | Iff (f1, f2)
     | Until (_, f1, f2) | Since (_, f1, f2) -> let a1s = List.fold_left (preds f1) ~init:[]
@@ -278,6 +301,7 @@ let rec preds = function
                                                              else acc @ [a]) in
                                                List.append a1s a2s
 
+(* Returns all predicate names in a formula. *)
 let pred_names f =
   let rec pred_names_rec s = function
     | TT | FF | EqConst _ -> s
@@ -285,11 +309,18 @@ let pred_names f =
     | Neg f | Exists (_, f) | Forall (_, f)
       | Prev (_, f) | Next (_, f)
       | Once (_, f) | Eventually (_, f)
-      | Historically (_, f) | Always (_, f) -> pred_names_rec s f
+      | Historically (_, f) | Always (_, f)
+      | Agg (_, _, _, _, f) -> pred_names_rec s f
     | And (f1, f2) | Or (f1, f2)
       | Imp (f1, f2) | Iff (f1, f2)
       | Until (_, f1, f2) | Since (_, f1, f2) -> Set.union (pred_names_rec s f1) (pred_names_rec s f2) in
   pred_names_rec (Set.empty (module String)) f
+
+let agg_op_to_string = function
+| Cnt -> "CNT"
+| Sum -> "SUM"
+| Sup -> "SUP"
+| Min -> "MIN"
 
 let op_to_string = function
   | TT -> Printf.sprintf "⊤"
@@ -309,6 +340,7 @@ let op_to_string = function
   | Eventually (i, _) -> Printf.sprintf "◊%s" (Interval.to_string i)
   | Historically (i, _) -> Printf.sprintf "■%s" (Interval.to_string i)
   | Always (i, _) -> Printf.sprintf "□%s" (Interval.to_string i)
+  | Agg (y, op, t, gs, _) -> Printf.sprintf "%s ← %s %s;(%s)" y (agg_op_to_string op) t (String.concat ~sep:", " gs)
   | Since (i, _, _) -> Printf.sprintf "S%s" (Interval.to_string i)
   | Until (i, _, _) -> Printf.sprintf "U%s" (Interval.to_string i)
 
