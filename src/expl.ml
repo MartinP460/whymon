@@ -13,6 +13,7 @@ open Pred
 
 module Fdeque = Core.Fdeque
 
+(* Disjoint union. *)
 module Part = struct
 
   type sub = (Dom.t, Dom.comparator_witness) Setc.t
@@ -130,7 +131,176 @@ module Part = struct
 
 end
 
+(* Partioned decision tree. *)
+module Pdt = struct
 
+  type 'a t = Leaf of 'a | Node of string * ('a t) Part.t
+
+  let rec apply1 vars f pdt = match vars, pdt with
+    | _ , Leaf l -> Leaf (f l)
+    | z :: vars, Node (x, part) ->
+       if String.equal x z then
+         Node (x, Part.map part (apply1 vars f))
+       else apply1 vars f (Node (x, part))
+    | _ -> raise (Invalid_argument "variable list is empty")
+
+  let rec apply2 vars f pdt1 pdt2 = match vars, pdt1, pdt2 with
+    | _ , Leaf l1, Leaf l2 -> Leaf (f l1 l2)
+    | _ , Leaf l1, Node (x, part2) -> Node (x, Part.map part2 (apply1 vars (f l1)))
+    | _ , Node (x, part1), Leaf l2 -> Node (x, Part.map part1 (apply1 vars (fun l1 -> f l1 l2)))
+    | z :: vars, Node (x, part1), Node (y, part2) ->
+       if String.equal x z && String.equal y z then
+         Node (z, Part.merge2 (apply2 vars f) part1 part2)
+       else (if String.equal x z then
+               Node (x, Part.map part1 (fun pdt1 -> apply2 vars f pdt1 (Node (y, part2))))
+             else (if String.equal y z then
+                     Node (y, Part.map part2 (apply2 vars f (Node (x, part1))))
+                   else apply2 vars f (Node (x, part1)) (Node (y, part2))))
+    | _ -> raise (Invalid_argument "variable list is empty")
+
+  let rec apply3 vars f pdt1 pdt2 pdt3 = match vars, pdt1, pdt2, pdt3 with
+    | _ , Leaf l1, Leaf l2, Leaf l3 -> Leaf (f l1 l2 l3)
+    | _ , Leaf l1, Leaf l2, Node (x, part3) ->
+       Node (x, Part.map part3 (apply1 vars (fun l3 -> f l1 l2 l3)))
+    | _ , Leaf l1, Node (x, part2), Leaf l3 ->
+       Node (x, Part.map part2 (apply1 vars (fun l2 -> f l1 l2 l3)))
+    | _ , Node (x, part1), Leaf l2, Leaf l3 ->
+       Node (x, Part.map part1 (apply1 vars (fun l1 -> f l1 l2 l3)))
+    | w :: vars, Leaf l1, Node (y, part2), Node (z, part3) ->
+       if String.equal y w && String.equal z w then
+         Node (w, Part.merge2 (apply2 vars (f l1)) part2 part3)
+       else (if String.equal y w then
+               Node (y, Part.map part2 (fun pdt2 -> apply2 vars (f l1) pdt2 (Node (z, part3))))
+             else (if String.equal z w then
+                     Node (z, Part.map part3 (fun pdt3 -> apply2 vars (f l1) (Node (y, part2)) pdt3))
+                   else apply3 vars f (Leaf l1) (Node (y, part2)) (Node(z, part3))))
+    | w :: vars, Node (x, part1), Node (y, part2), Leaf l3 ->
+       if String.equal x w && String.equal y w then
+         Node (w, Part.merge2 (apply2 vars (fun l1 l2 -> f l1 l2 l3)) part1 part2)
+       else (if String.equal x w then
+               Node (x, Part.map part1 (fun pdt1 -> apply2 vars (fun pt1 pt2 -> f pt1 pt2 l3) pdt1 (Node (y, part2))))
+             else (if String.equal y w then
+                     Node (y, Part.map part2 (fun pdt2 -> apply2 vars (fun l1 l2 -> f l1 l2 l3) (Node (x, part1)) pdt2))
+                   else apply3 vars f (Node (x, part1)) (Node (y, part2)) (Leaf l3)))
+    | w :: vars, Node (x, part1), Leaf l2, Node (z, part3) ->
+       if String.equal x w && String.equal z w then
+         Node (w, Part.merge2 (apply2 vars (fun l1 -> f l1 l2)) part1 part3)
+       else (if String.equal x w then
+               Node (x, Part.map part1 (fun pdt1 -> apply2 vars (fun l1 -> f l1 l2) pdt1 (Node (z, part3))))
+             else (if String.equal z w then
+                     Node (z, Part.map part3 (fun pdt3 -> apply2 vars (fun l1 -> f l1 l2) (Node (x, part1)) pdt3))
+                   else apply3 vars f (Node (x, part1)) (Leaf l2) (Node (z, part3))))
+    | w :: vars, Node (x, part1), Node (y, part2), Node (z, part3) ->
+       if String.equal x w && String.equal y w && String.equal z w then
+         Node (z, Part.merge3 (apply3 vars f) part1 part2 part3)
+       else (if String.equal x w && String.equal y w then
+               Node (w, Part.merge2 (fun pdt1 pdt2 -> apply3 vars f pdt1 pdt2 (Node (z, part3))) part1 part2)
+             else (if String.equal x w && String.equal z w then
+                     Node (w, Part.merge2 (fun pdt1 pdt3 -> apply3 vars f pdt1 (Node (y, part2)) pdt3) part1 part3)
+                   else (if String.equal y w && String.equal z w then
+                           Node (w, Part.merge2 (apply3 vars (fun l1 -> f l1) (Node (x, part1))) part2 part3)
+                         else (if String.equal x w then
+                                 Node (x, Part.map part1 (fun pdt1 -> apply3 vars f pdt1 (Node (y, part2)) (Node (z, part3))))
+                               else (if String.equal y w then
+                                       Node (y, Part.map part2 (fun pdt2 -> apply3 vars f (Node (x, part1)) pdt2
+                                                                              (Node (z, part3))))
+                                     else (if String.equal z w then
+                                             Node (z, Part.map part3 (fun pdt3 -> apply3 vars f (Node (x, part1))
+                                                                                    (Node (y, part2)) pdt3))
+                                           else apply3 vars f (Node (x, part1)) (Node (y, part2)) (Node (z, part3))))))))
+    | _ -> raise (Invalid_argument "variable list is empty")
+
+  let rec split_prod = function
+    | Leaf (l1, l2) -> (Leaf l1, Leaf l2)
+    | Node (x, part) -> let (part1, part2) = Part.split_prod (Part.map part split_prod) in
+                        (Node (x, part1), Node (x, part2))
+
+  let rec split_list = function
+    | Leaf l -> List.map l ~f:(fun el -> Leaf el)
+    | Node (x, part) -> List.map (Part.split_list (Part.map part split_list)) ~f:(fun el -> Node (x, el))
+
+  let rec to_string f indent pdt =
+    let indent' = (String.make 4 ' ') ^ indent in
+    match pdt with
+    | Leaf pt -> Printf.sprintf "%s❮\n\n%s\n%s❯" indent' ((f indent') pt) indent'
+    | Node (x, part) -> (Part.to_string indent' (Var x) (to_string f) part)
+
+  let rec to_latex f indent = function
+    | Leaf pt -> Printf.sprintf "%s%s\n" indent (f pt)
+    | Node (x, part) -> (Part.to_string indent (Var x) (to_latex f) part)
+
+  let rec to_light_string f indent = function
+    | Leaf pt -> Printf.sprintf "%s%s\n" indent (f pt)
+    | Node (x, part) -> (Part.to_string indent (Var x) (to_light_string f) part)
+
+  let unleaf = function
+    | Leaf l -> l
+    | _ -> raise (Invalid_argument "function not defined for nodes")
+
+  let rec hide vars f_leaf f_node pdt = match vars, pdt with
+    |  _ , Leaf l -> Leaf (f_leaf l)
+    | [_], Node (_, part) -> Leaf (f_node (Part.map part unleaf))
+    | x :: vars, Node (y, part) -> if String.equal x y then
+                                     Node (y, Part.map part (hide vars f_leaf f_node))
+                                   else hide vars f_leaf f_node (Node (y, part))
+    | _ -> raise (Invalid_argument "function not defined for other cases")
+
+  (* reduce related *)
+  let rec equal p_eq pdt1 pdt2 =
+    match pdt1, pdt2 with
+    | Leaf l1, Leaf l2 -> p_eq l1 l2
+    | Node (x, part), Node (x', part') -> String.equal x x' && Int.equal (Part.length part) (Part.length part') &&
+                                            List.for_all2_exn part part' ~f:(fun (s, v) (s', v') ->
+                                                Setc.equal s s' && equal p_eq v v')
+    | _ -> raise (Invalid_argument "function not defined for other cases")
+
+  let rec reduce p_eq = function
+    | Leaf l -> Leaf l
+    | Node (x, part) -> Node (x, Part.dedup (equal p_eq) (Part.map part (reduce p_eq)))
+
+  let rec apply1_reduce p_eq vars f pdt = match vars, pdt with
+    | _ , Leaf l -> Leaf (f l)
+    | z :: vars, Node (x, part) ->
+       if String.equal x z then
+         Node (x, Part.map_dedup (equal p_eq) part (apply1_reduce p_eq vars f))
+       else apply1_reduce p_eq vars f (Node (x, part))
+    | _ -> raise (Invalid_argument "variable list is empty")
+
+  let rec apply2_reduce p_eq vars f pdt1 pdt2 = match vars, pdt1, pdt2 with
+    | _ , Leaf l1, Leaf l2 -> Leaf (f l1 l2)
+    | _ , Leaf l1, Node (x, part2) -> Node (x, Part.map_dedup (equal p_eq) part2 (apply1_reduce p_eq vars (f l1)))
+    | _ , Node (x, part1), Leaf l2 -> Node (x, Part.map_dedup (equal p_eq) part1 (apply1_reduce p_eq vars (fun l1 -> f l1 l2)))
+    | z :: vars, Node (x, part1), Node (y, part2) ->
+       if String.equal x z && String.equal y z then
+         Node (z, Part.merge2_dedup (equal p_eq) (apply2_reduce p_eq vars f) part1 part2)
+       else (if String.equal x z then
+               Node (x, Part.map_dedup (equal p_eq) part1 (fun pdt1 -> apply2_reduce p_eq vars f pdt1 (Node (y, part2))))
+             else (if String.equal y z then
+                     Node (y, Part.map_dedup (equal p_eq) part2 (apply2_reduce p_eq vars f (Node (x, part1))))
+                   else apply2_reduce p_eq vars f (Node (x, part1)) (Node (y, part2))))
+    | _ -> raise (Invalid_argument "variable list is empty")
+
+  let rec split_prod_reduce p_eq = function
+    | Leaf (l1, l2) -> (Leaf l1, Leaf l2)
+    | Node (x, part) -> let (part1, part2) = Part.split_prod_dedup (equal p_eq) (Part.map part (split_prod_reduce p_eq)) in
+                        (Node (x, part1), Node (x, part2))
+
+  let rec split_list_reduce p_eq = function
+    | Leaf l -> List.map l ~f:(fun el -> Leaf el)
+    | Node (x, part) -> List.map (Part.split_list_dedup (equal p_eq) (Part.map part (split_list_reduce p_eq)))
+                          ~f:(fun el -> Node (x, el))
+
+  let rec hide_reduce p_eq vars f_leaf f_node pdt = match vars, pdt with
+    |  _ , Leaf l -> Leaf (f_leaf l)
+    | [_], Node (_, part) -> Leaf (f_node (Part.map part unleaf))
+    | x :: vars, Node (y, part) -> if String.equal x y then
+                                     Node (y, Part.map_dedup (equal p_eq) part (hide_reduce p_eq vars f_leaf f_node))
+                                   else hide_reduce p_eq vars f_leaf f_node (Node (y, part))
+    | _ -> raise (Invalid_argument "function not defined for other cases")
+
+end
+
+(* Proof object. *)
 module Proof = struct
 
   type sp =
@@ -768,174 +938,7 @@ module Proof = struct
 
 end
 
-module Pdt = struct
-
-  type 'a t = Leaf of 'a | Node of string * ('a t) Part.t
-
-  let rec apply1 vars f pdt = match vars, pdt with
-    | _ , Leaf l -> Leaf (f l)
-    | z :: vars, Node (x, part) ->
-       if String.equal x z then
-         Node (x, Part.map part (apply1 vars f))
-       else apply1 vars f (Node (x, part))
-    | _ -> raise (Invalid_argument "variable list is empty")
-
-  let rec apply2 vars f pdt1 pdt2 = match vars, pdt1, pdt2 with
-    | _ , Leaf l1, Leaf l2 -> Leaf (f l1 l2)
-    | _ , Leaf l1, Node (x, part2) -> Node (x, Part.map part2 (apply1 vars (f l1)))
-    | _ , Node (x, part1), Leaf l2 -> Node (x, Part.map part1 (apply1 vars (fun l1 -> f l1 l2)))
-    | z :: vars, Node (x, part1), Node (y, part2) ->
-       if String.equal x z && String.equal y z then
-         Node (z, Part.merge2 (apply2 vars f) part1 part2)
-       else (if String.equal x z then
-               Node (x, Part.map part1 (fun pdt1 -> apply2 vars f pdt1 (Node (y, part2))))
-             else (if String.equal y z then
-                     Node (y, Part.map part2 (apply2 vars f (Node (x, part1))))
-                   else apply2 vars f (Node (x, part1)) (Node (y, part2))))
-    | _ -> raise (Invalid_argument "variable list is empty")
-
-  let rec apply3 vars f pdt1 pdt2 pdt3 = match vars, pdt1, pdt2, pdt3 with
-    | _ , Leaf l1, Leaf l2, Leaf l3 -> Leaf (f l1 l2 l3)
-    | _ , Leaf l1, Leaf l2, Node (x, part3) ->
-       Node (x, Part.map part3 (apply1 vars (fun l3 -> f l1 l2 l3)))
-    | _ , Leaf l1, Node (x, part2), Leaf l3 ->
-       Node (x, Part.map part2 (apply1 vars (fun l2 -> f l1 l2 l3)))
-    | _ , Node (x, part1), Leaf l2, Leaf l3 ->
-       Node (x, Part.map part1 (apply1 vars (fun l1 -> f l1 l2 l3)))
-    | w :: vars, Leaf l1, Node (y, part2), Node (z, part3) ->
-       if String.equal y w && String.equal z w then
-         Node (w, Part.merge2 (apply2 vars (f l1)) part2 part3)
-       else (if String.equal y w then
-               Node (y, Part.map part2 (fun pdt2 -> apply2 vars (f l1) pdt2 (Node (z, part3))))
-             else (if String.equal z w then
-                     Node (z, Part.map part3 (fun pdt3 -> apply2 vars (f l1) (Node (y, part2)) pdt3))
-                   else apply3 vars f (Leaf l1) (Node (y, part2)) (Node(z, part3))))
-    | w :: vars, Node (x, part1), Node (y, part2), Leaf l3 ->
-       if String.equal x w && String.equal y w then
-         Node (w, Part.merge2 (apply2 vars (fun l1 l2 -> f l1 l2 l3)) part1 part2)
-       else (if String.equal x w then
-               Node (x, Part.map part1 (fun pdt1 -> apply2 vars (fun pt1 pt2 -> f pt1 pt2 l3) pdt1 (Node (y, part2))))
-             else (if String.equal y w then
-                     Node (y, Part.map part2 (fun pdt2 -> apply2 vars (fun l1 l2 -> f l1 l2 l3) (Node (x, part1)) pdt2))
-                   else apply3 vars f (Node (x, part1)) (Node (y, part2)) (Leaf l3)))
-    | w :: vars, Node (x, part1), Leaf l2, Node (z, part3) ->
-       if String.equal x w && String.equal z w then
-         Node (w, Part.merge2 (apply2 vars (fun l1 -> f l1 l2)) part1 part3)
-       else (if String.equal x w then
-               Node (x, Part.map part1 (fun pdt1 -> apply2 vars (fun l1 -> f l1 l2) pdt1 (Node (z, part3))))
-             else (if String.equal z w then
-                     Node (z, Part.map part3 (fun pdt3 -> apply2 vars (fun l1 -> f l1 l2) (Node (x, part1)) pdt3))
-                   else apply3 vars f (Node (x, part1)) (Leaf l2) (Node (z, part3))))
-    | w :: vars, Node (x, part1), Node (y, part2), Node (z, part3) ->
-       if String.equal x w && String.equal y w && String.equal z w then
-         Node (z, Part.merge3 (apply3 vars f) part1 part2 part3)
-       else (if String.equal x w && String.equal y w then
-               Node (w, Part.merge2 (fun pdt1 pdt2 -> apply3 vars f pdt1 pdt2 (Node (z, part3))) part1 part2)
-             else (if String.equal x w && String.equal z w then
-                     Node (w, Part.merge2 (fun pdt1 pdt3 -> apply3 vars f pdt1 (Node (y, part2)) pdt3) part1 part3)
-                   else (if String.equal y w && String.equal z w then
-                           Node (w, Part.merge2 (apply3 vars (fun l1 -> f l1) (Node (x, part1))) part2 part3)
-                         else (if String.equal x w then
-                                 Node (x, Part.map part1 (fun pdt1 -> apply3 vars f pdt1 (Node (y, part2)) (Node (z, part3))))
-                               else (if String.equal y w then
-                                       Node (y, Part.map part2 (fun pdt2 -> apply3 vars f (Node (x, part1)) pdt2
-                                                                              (Node (z, part3))))
-                                     else (if String.equal z w then
-                                             Node (z, Part.map part3 (fun pdt3 -> apply3 vars f (Node (x, part1))
-                                                                                    (Node (y, part2)) pdt3))
-                                           else apply3 vars f (Node (x, part1)) (Node (y, part2)) (Node (z, part3))))))))
-    | _ -> raise (Invalid_argument "variable list is empty")
-
-  let rec split_prod = function
-    | Leaf (l1, l2) -> (Leaf l1, Leaf l2)
-    | Node (x, part) -> let (part1, part2) = Part.split_prod (Part.map part split_prod) in
-                        (Node (x, part1), Node (x, part2))
-
-  let rec split_list = function
-    | Leaf l -> List.map l ~f:(fun el -> Leaf el)
-    | Node (x, part) -> List.map (Part.split_list (Part.map part split_list)) ~f:(fun el -> Node (x, el))
-
-  let rec to_string f indent pdt =
-    let indent' = (String.make 4 ' ') ^ indent in
-    match pdt with
-    | Leaf pt -> Printf.sprintf "%s❮\n\n%s\n%s❯" indent' ((f indent') pt) indent'
-    | Node (x, part) -> (Part.to_string indent' (Var x) (to_string f) part)
-
-  let rec to_latex f indent = function
-    | Leaf pt -> Printf.sprintf "%s%s\n" indent (f pt)
-    | Node (x, part) -> (Part.to_string indent (Var x) (to_latex f) part)
-
-  let rec to_light_string f indent = function
-    | Leaf pt -> Printf.sprintf "%s%s\n" indent (f pt)
-    | Node (x, part) -> (Part.to_string indent (Var x) (to_light_string f) part)
-
-  let unleaf = function
-    | Leaf l -> l
-    | _ -> raise (Invalid_argument "function not defined for nodes")
-
-  let rec hide vars f_leaf f_node pdt = match vars, pdt with
-    |  _ , Leaf l -> Leaf (f_leaf l)
-    | [_], Node (_, part) -> Leaf (f_node (Part.map part unleaf))
-    | x :: vars, Node (y, part) -> if String.equal x y then
-                                     Node (y, Part.map part (hide vars f_leaf f_node))
-                                   else hide vars f_leaf f_node (Node (y, part))
-    | _ -> raise (Invalid_argument "function not defined for other cases")
-
-  (* reduce related *)
-  let rec equal p_eq pdt1 pdt2 =
-    match pdt1, pdt2 with
-    | Leaf l1, Leaf l2 -> p_eq l1 l2
-    | Node (x, part), Node (x', part') -> String.equal x x' && Int.equal (Part.length part) (Part.length part') &&
-                                            List.for_all2_exn part part' ~f:(fun (s, v) (s', v') ->
-                                                Setc.equal s s' && equal p_eq v v')
-    | _ -> raise (Invalid_argument "function not defined for other cases")
-
-  let rec reduce p_eq = function
-    | Leaf l -> Leaf l
-    | Node (x, part) -> Node (x, Part.dedup (equal p_eq) (Part.map part (reduce p_eq)))
-
-  let rec apply1_reduce p_eq vars f pdt = match vars, pdt with
-    | _ , Leaf l -> Leaf (f l)
-    | z :: vars, Node (x, part) ->
-       if String.equal x z then
-         Node (x, Part.map_dedup (equal p_eq) part (apply1_reduce p_eq vars f))
-       else apply1_reduce p_eq vars f (Node (x, part))
-    | _ -> raise (Invalid_argument "variable list is empty")
-
-  let rec apply2_reduce p_eq vars f pdt1 pdt2 = match vars, pdt1, pdt2 with
-    | _ , Leaf l1, Leaf l2 -> Leaf (f l1 l2)
-    | _ , Leaf l1, Node (x, part2) -> Node (x, Part.map_dedup (equal p_eq) part2 (apply1_reduce p_eq vars (f l1)))
-    | _ , Node (x, part1), Leaf l2 -> Node (x, Part.map_dedup (equal p_eq) part1 (apply1_reduce p_eq vars (fun l1 -> f l1 l2)))
-    | z :: vars, Node (x, part1), Node (y, part2) ->
-       if String.equal x z && String.equal y z then
-         Node (z, Part.merge2_dedup (equal p_eq) (apply2_reduce p_eq vars f) part1 part2)
-       else (if String.equal x z then
-               Node (x, Part.map_dedup (equal p_eq) part1 (fun pdt1 -> apply2_reduce p_eq vars f pdt1 (Node (y, part2))))
-             else (if String.equal y z then
-                     Node (y, Part.map_dedup (equal p_eq) part2 (apply2_reduce p_eq vars f (Node (x, part1))))
-                   else apply2_reduce p_eq vars f (Node (x, part1)) (Node (y, part2))))
-    | _ -> raise (Invalid_argument "variable list is empty")
-
-  let rec split_prod_reduce p_eq = function
-    | Leaf (l1, l2) -> (Leaf l1, Leaf l2)
-    | Node (x, part) -> let (part1, part2) = Part.split_prod_dedup (equal p_eq) (Part.map part (split_prod_reduce p_eq)) in
-                        (Node (x, part1), Node (x, part2))
-
-  let rec split_list_reduce p_eq = function
-    | Leaf l -> List.map l ~f:(fun el -> Leaf el)
-    | Node (x, part) -> List.map (Part.split_list_dedup (equal p_eq) (Part.map part (split_list_reduce p_eq)))
-                          ~f:(fun el -> Node (x, el))
-
-  let rec hide_reduce p_eq vars f_leaf f_node pdt = match vars, pdt with
-    |  _ , Leaf l -> Leaf (f_leaf l)
-    | [_], Node (_, part) -> Leaf (f_node (Part.map part unleaf))
-    | x :: vars, Node (y, part) -> if String.equal x y then
-                                     Node (y, Part.map_dedup (equal p_eq) part (hide_reduce p_eq vars f_leaf f_node))
-                                   else hide_reduce p_eq vars f_leaf f_node (Node (y, part))
-    | _ -> raise (Invalid_argument "function not defined for other cases")
-
-end
-
+(* This is the final type of an explaination - a PDT containing proof objects of satisfactions or violations. *)
 type t = Proof.t Pdt.t
 
 let rec equal expl expl' = match expl, expl' with
