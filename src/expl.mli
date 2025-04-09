@@ -37,6 +37,29 @@ module Part : sig
 
 end
 
+module Pdt : sig
+
+  type 'a t = Leaf of 'a | Node of string * ('a t) Part.t
+
+  val apply1: string list -> ('a -> 'b) -> 'a t -> 'b t
+  val apply2: string list -> ('a -> 'b -> 'c) -> 'a t -> 'b t -> 'c t
+  val apply3: string list -> ('a -> 'b -> 'c -> 'd) -> 'a t -> 'b t -> 'c t -> 'd t
+  val split_prod: ('a * 'b) t -> 'a t * 'b t
+  val split_list: 'a list t -> 'a t list
+  val hide: string list -> ('a -> 'b) -> ('a Part.t -> 'b) -> 'a t -> 'b t
+  val to_string: (string -> 'a -> string) -> string -> 'a t -> string
+
+  val equal: ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
+  val reduce: ('a -> 'a -> bool) -> 'a t -> 'a t
+  val apply1_reduce: ('a -> 'a -> bool) -> string list -> ('b -> 'a) -> 'b t -> 'a t
+  val apply2_reduce: ('a -> 'a -> bool) -> string list -> ('b -> 'c -> 'a) -> 'b t -> 'c t -> 'a t
+  val split_prod_reduce: ('a -> 'a -> bool) -> ('a * 'a) t -> 'a t * 'a t
+  val split_list_reduce: ('a -> 'a -> bool) -> 'a list t -> 'a t list
+  val hide_reduce: ('a -> 'a -> bool) -> string list -> ('b -> 'a) -> ('b Part.t -> 'a) -> 'b t -> 'a t
+
+end
+
+
 module Proof : sig
 
   type sp =
@@ -60,6 +83,7 @@ module Proof : sig
     | SHistorically of int * int * sp Fdeque.t
     | SHistoricallyOut of int
     | SAlways of int * int * sp Fdeque.t
+    | SAgg of string * p Pdt.t
     | SSince of sp * sp Fdeque.t
     | SUntil of sp * sp Fdeque.t
   and vp =
@@ -87,13 +111,18 @@ module Proof : sig
     | VEventually of int * int * vp Fdeque.t
     | VHistorically of int * vp
     | VAlways of int * vp
+    | VAgg of string * p Pdt.t
+    | VAggG of string list
     | VSinceOut of int
     | VSince of int * vp * vp Fdeque.t
     | VSinceInf of int * int * vp Fdeque.t
     | VUntil of int * vp * vp Fdeque.t
     | VUntilInf of int * int * vp Fdeque.t
+  and p =
+    | S of sp
+    | V of vp
 
-  type t = S of sp | V of vp
+  type t = p
 
   val s_equal: sp -> sp -> bool
   val v_equal: vp -> vp -> bool
@@ -127,28 +156,6 @@ module Proof : sig
     val minp_list: t list -> t
 
   end
-
-end
-
-module Pdt : sig
-
-  type 'a t = Leaf of 'a | Node of string * ('a t) Part.t
-
-  val apply1: string list -> ('a -> 'b) -> 'a t -> 'b t
-  val apply2: string list -> ('a -> 'b -> 'c) -> 'a t -> 'b t -> 'c t
-  val apply3: string list -> ('a -> 'b -> 'c -> 'd) -> 'a t -> 'b t -> 'c t -> 'd t
-  val split_prod: ('a * 'b) t -> 'a t * 'b t
-  val split_list: 'a list t -> 'a t list
-  val hide: string list -> ('a -> 'b) -> ('a Part.t -> 'b) -> 'a t -> 'b t
-  val to_string: (string -> 'a -> string) -> string -> 'a t -> string
-
-  val equal: ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
-  val reduce: ('a -> 'a -> bool) -> 'a t -> 'a t
-  val apply1_reduce: ('a -> 'a -> bool) -> string list -> ('b -> 'a) -> 'b t -> 'a t
-  val apply2_reduce: ('a -> 'a -> bool) -> string list -> ('b -> 'c -> 'a) -> 'b t -> 'c t -> 'a t
-  val split_prod_reduce: ('a -> 'a -> bool) -> ('a * 'a) t -> 'a t * 'a t
-  val split_list_reduce: ('a -> 'a -> bool) -> 'a list t -> 'a t list
-  val hide_reduce: ('a -> 'a -> bool) -> string list -> ('b -> 'a) -> ('b Part.t -> 'a) -> 'b t -> 'a t
 
 end
 

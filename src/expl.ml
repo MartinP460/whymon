@@ -324,6 +324,7 @@ module Proof = struct
     | SHistorically of int * int * sp Fdeque.t
     | SHistoricallyOut of int
     | SAlways of int * int * sp Fdeque.t
+    | SAgg of string * p Pdt.t
     | SSince of sp * sp Fdeque.t
     | SUntil of sp * sp Fdeque.t
   and vp =
@@ -351,13 +352,18 @@ module Proof = struct
     | VEventually of int * int * vp Fdeque.t
     | VHistorically of int * vp
     | VAlways of int * vp
+    | VAgg of string * p Pdt.t
+    | VAggG of string list
     | VSinceOut of int
     | VSince of int * vp * vp Fdeque.t
     | VSinceInf of int * int * vp Fdeque.t
     | VUntil of int * vp * vp Fdeque.t
     | VUntilInf of int * int * vp Fdeque.t
+  and p =
+    | S of sp
+    | V of vp
 
-  type t = S of sp | V of vp
+  type t = p
 
   let rec s_equal x y = match x, y with
     | STT tp, STT tp' -> Int.equal tp tp'
