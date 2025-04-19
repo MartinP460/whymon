@@ -48,6 +48,7 @@ module Pdt : sig
   val split_list: 'a list t -> 'a t list
   val hide: string list -> ('a -> 'b) -> ('a Part.t -> 'b) -> 'a t -> 'b t
   val to_string: (string -> 'a -> string) -> string -> 'a t -> string
+  val fold: 'a t -> 'b -> ('b -> 'a -> 'b) -> 'b
 
   val equal: ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
   val reduce: ('a -> 'a -> bool) -> 'a t -> 'a t
@@ -112,7 +113,7 @@ module Proof : sig
     | VHistorically of int * vp
     | VAlways of int * vp
     | VAgg of string * p Pdt.t
-    | VAggG of string list
+    | VAggG of int * string list (* The int denotes the time-point since we cannot otherwise infer it. Needs to be changed. *)
     | VSinceOut of int
     | VSince of int * vp * vp Fdeque.t
     | VSinceInf of int * int * vp Fdeque.t

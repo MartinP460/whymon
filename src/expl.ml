@@ -237,6 +237,14 @@ module Pdt = struct
     | Leaf l -> l
     | _ -> raise (Invalid_argument "function not defined for nodes")
 
+  let rec fst_leaf = function
+    | Leaf l -> l
+    | Node (_, part) -> fst_leaf (Part.hd part) (* This assumes that all nodes have leaves. *)
+  
+  let rec fold pdt init f = match pdt with
+    | Leaf l -> f init l
+    | Node (_, part) -> Part.fold_left part init (fun acc elm -> fold elm acc f)
+
   let rec hide vars f_leaf f_node pdt = match vars, pdt with
     |  _ , Leaf l -> Leaf (f_leaf l)
     | [_], Node (_, part) -> Leaf (f_node (Part.map part unleaf))
@@ -353,7 +361,7 @@ module Proof = struct
     | VHistorically of int * vp
     | VAlways of int * vp
     | VAgg of string * p Pdt.t
-    | VAggG of string list
+    | VAggG of int * string list (* The int denotes the time-point since we cannot otherwise infer it. Needs to be changed. *)
     | VSinceOut of int
     | VSince of int * vp * vp Fdeque.t
     | VSinceInf of int * int * vp Fdeque.t
@@ -365,6 +373,7 @@ module Proof = struct
 
   type t = p
 
+  (* Checks whether two satisfaction proof objects are equal. *)
   let rec s_equal x y = match x, y with
     | STT tp, STT tp' -> Int.equal tp tp'
     | SEqConst (tp, x, c), SEqConst (tp', x', c') ->
@@ -395,6 +404,7 @@ module Proof = struct
        Int.equal tp tp' && Int.equal ltp li' &&
          Int.equal (Fdeque.length sps) (Fdeque.length sps') &&
            Etc.fdeque_for_all2_exn sps sps' ~f:(fun sp sp' -> s_equal sp sp')
+    | SAgg (op, pdt), SAgg (op', pdt') -> String.equal op op' && Pdt.equal (fun p p' -> equal p p') pdt pdt'
     | SAlways (tp, htp, sps), SAlways (tp', hi', sps') ->
        Int.equal tp tp' && Int.equal htp hi' &&
          Int.equal (Fdeque.length sps) (Fdeque.length sps') &&
@@ -404,6 +414,7 @@ module Proof = struct
        s_equal sp2 sp2' && Int.equal (Fdeque.length sp1s) (Fdeque.length sp1s') &&
          Etc.fdeque_for_all2_exn sp1s sp1s' ~f:(fun sp1 sp1' -> s_equal sp1 sp1')
     | _ -> false
+  (* Checks whether two violation proof objects are equal. *)
   and v_equal x y = match x, y with
     | VFF tp, VFF tp' -> Int.equal tp tp'
     | VEqConst (tp, x, c), VEqConst (tp', x', c') -> Int.equal tp tp' && String.equal x x' && Dom.equal c c'
@@ -442,6 +453,8 @@ module Proof = struct
            Etc.fdeque_for_all2_exn vps vps' ~f:(fun vp vp' -> v_equal vp vp')
     | VHistorically (tp, _), VHistorically (tp', _)
       | VAlways (tp, _), VAlways (tp', _) -> Int.equal tp tp'
+    | VAgg (op, pdt), VAgg (op', pdt') -> String.equal op op' && Pdt.equal (fun p p' -> equal p p') pdt pdt'
+    | VAggG (tp, xs), VAggG (tp', xs') -> Int.equal tp tp' && List.equal String.equal xs xs'
     | VSince (tp, vp1, vp2s), VSince (tp', vp1', vp2s')
       | VUntil (tp, vp1, vp2s), VUntil (tp', vp1', vp2s') ->
        Int.equal tp tp' && v_equal vp1 vp1' &&
@@ -456,33 +469,39 @@ module Proof = struct
          Int.equal (Fdeque.length vp2s) (Fdeque.length vp2s') &&
            Etc.fdeque_for_all2_exn vp2s vp2s' ~f:(fun vp2 vp2' -> v_equal vp2 vp2')
     | _ -> false
-
-  let equal x y = match x, y with
+  (* Checks whether two proof objects are equal. *)
+  and equal x y = match x, y with
     | S sp, S sp' -> s_equal sp sp'
     | V vp, V vp' -> v_equal vp vp'
     | _ -> false
 
+  (* Extracts a satisfaction proof object from union S. *)
   let unS = function
     | S sp -> sp
     | _ -> raise (Invalid_argument "unS is not defined for V proofs")
 
+  (* Extracts a violation proof object from union V. *)
   let unV = function
     | V vp -> vp
     | _ -> raise (Invalid_argument "unV is not defined for S proofs")
 
+  (* Checks whether a proof objects is a satisfaction. *)
   let isS = function
     | S _ -> true
     | V _ -> false
 
+  (* Checks whether a proof objects is a violation. *)
   let isV = function
     | S _ -> false
     | V _ -> true
 
+  (* Appends a satisfaction proof object to a collection of satisfaction proof objects. *)
   let s_append sp sp1 = match sp with
     | SSince (sp2, sp1s) -> SSince (sp2, Fdeque.enqueue_back sp1s sp1)
     | SUntil (sp2, sp1s) -> SUntil (sp2, Fdeque.enqueue_back sp1s sp1)
     | _ -> raise (Invalid_argument "sappend is not defined for this sp")
 
+  (* Appends a violation proof object to a collection of violation proof objects. *)
   let v_append vp vp2 = match vp with
     | VSince (tp, vp1, vp2s) -> VSince (tp,  vp1, Fdeque.enqueue_back vp2s vp2)
     | VSinceInf (tp, etp, vp2s) -> VSinceInf (tp, etp, Fdeque.enqueue_back vp2s vp2)
@@ -490,12 +509,14 @@ module Proof = struct
     | VUntilInf (tp, ltp, vp2s) -> VUntilInf (tp, ltp, Fdeque.enqueue_back vp2s vp2)
     | _ -> raise (Invalid_argument "vappend is not defined for this vp")
 
+  (* Removes a satisfaction proof object from a collection of satisfaction proof objects. *)
   let s_drop = function
     | SUntil (sp2, sp1s) -> (match Fdeque.drop_front sp1s with
                              | None -> None
                              | Some(sp1s') -> Some (SUntil (sp2, sp1s')))
     | _ -> raise (Invalid_argument "sdrop is not defined for this sp")
 
+  (* Removes a violation proof object from a collection of violation proof objects. *)
   let v_drop = function
     | VUntil (tp, vp1, vp2s) -> (match Fdeque.drop_front vp2s with
                                  | None -> None
@@ -505,6 +526,7 @@ module Proof = struct
                                     | Some(vp2s') -> Some (VUntilInf (tp, ltp, vp2s')))
     | _ -> raise (Invalid_argument "vdrop is not defined for this vp")
 
+  (* Returns the time-point of a satisfaction proof object. *)
   let rec s_at = function
     | STT tp -> tp
     | SEqConst (tp, _, _) -> tp
@@ -525,11 +547,13 @@ module Proof = struct
     | SEventually (tp, _) -> tp
     | SHistorically (tp, _, _) -> tp
     | SHistoricallyOut tp -> tp
+    | SAgg (_, pdt) -> p_at (Pdt.fst_leaf pdt)
     | SAlways (tp, _, _) -> tp
     | SSince (sp2, sp1s) -> if Fdeque.is_empty sp1s then s_at sp2
                             else s_at (Fdeque.peek_back_exn sp1s)
     | SUntil (sp2, sp1s) -> if Fdeque.is_empty sp1s then s_at sp2
                             else s_at (Fdeque.peek_front_exn sp1s)
+  (* Returns the time-point of a violation proof object. *)
   and v_at = function
     | VFF tp -> tp
     | VEqConst (tp, _, _) -> tp
@@ -554,14 +578,16 @@ module Proof = struct
     | VOnce (tp, _, _) -> tp
     | VEventually (tp, _, _) -> tp
     | VHistorically (tp, _) -> tp
+    | VAgg (_, pdt) -> p_at (Pdt.fst_leaf pdt)
+    | VAggG (tp, _) -> tp
     | VAlways (tp, _) -> tp
     | VSinceOut tp -> tp
     | VSince (tp, _, _) -> tp
     | VSinceInf (tp, _, _) -> tp
     | VUntil (tp, _, _) -> tp
     | VUntilInf (tp, _, _) -> tp
-
-  let p_at = function
+  (* Returns the time-point of a proof object. *)
+  and p_at = function
     | S s_p -> s_at s_p
     | V v_p -> v_at v_p
 
@@ -607,6 +633,7 @@ module Proof = struct
     | SHistoricallyOut i -> Printf.sprintf "%sSHistoricallyOut{%d}" indent i
     | SAlways (_, ltp, sps) -> Printf.sprintf "%sSAlways{%d}{%d}\n%s" indent (s_at p) ltp
                                  (Etc.deque_to_string indent' s_to_string sps)
+    | SAgg (_, _) -> Printf.sprintf "s_to_string -> SAgg case: To be implemented."
     | SSince (sp2, sp1s) -> Printf.sprintf "%sSSince{%d}\n%s\n%s" indent (s_at p) (s_to_string indent' sp2)
                               (Etc.deque_to_string indent' s_to_string sp1s)
     | SUntil (sp2, sp1s) -> Printf.sprintf "%sSUntil{%d}\n%s\n%s" indent (s_at p)
@@ -644,6 +671,8 @@ module Proof = struct
                                      (Etc.deque_to_string indent' v_to_string vps)
     | VHistorically (_, vp) -> Printf.sprintf "%sVHistorically{%d}\n%s" indent (v_at p) (v_to_string indent' vp)
     | VAlways (_, vp) -> Printf.sprintf "%sVAlways{%d}\n%s" indent (v_at p) (v_to_string indent' vp)
+    | VAgg (_, _) -> Printf.sprintf "v_to_string -> VAgg case: To be implemented."
+    | VAggG (_) -> Printf.sprintf "v_to_string -> VAggG case: To be implemented."
     | VSinceOut i -> Printf.sprintf "%sVSinceOut{%d}" indent i
     | VSince (_, vp1, vp2s) -> Printf.sprintf "%sVSince{%d}\n%s\n%s" indent (v_at p) (v_to_string indent' vp1)
                                  (Etc.deque_to_string indent' v_to_string vp2s)
@@ -734,6 +763,7 @@ module Proof = struct
     | SHistoricallyOut _, Historically (i, _) ->
        Printf.sprintf "\\infer[\\ShistoricallyL{}]{%s, %d \\pvd %s}\n%s{\\tau_%d - \\tau_0 < %d}\n"
          (val_changes_to_latex v) (s_at p) (Formula.to_latex h) indent (s_at p) (Interval.left i)
+    | SAgg (_, _), Agg (_) -> Printf.sprintf "s_to_latex -> SAgg: To be implemented."
     | SAlways (_, _, sps), Always (_, f) ->
        Printf.sprintf "\\infer[\\Salways{}]{%s, %d \\pvd %s}\n%s{%s}\n"
          (val_changes_to_latex v) (s_at p) (Formula.to_latex h) indent
@@ -835,6 +865,8 @@ module Proof = struct
        Printf.sprintf "\\infer[\\Vhistorically{}]{%s, %d \\nvd %s}\n%s{{%d \\leq %d} & {\\tau_%d - \\tau_%d \\in %s} & {%s}}\n"
          (val_changes_to_latex v) (v_at p) (Formula.to_latex h) indent
          (v_at vp) tp tp (v_at vp) (Interval.to_latex i) (v_to_latex indent' v idx vp f)
+    | VAgg (_, _), Agg (_) -> Printf.sprintf "v_to_latex -> VAgg: To be implemented."
+    | VAggG (_, _), Agg (_) -> Printf.sprintf "v_to_latex -> VAggG: To be implemented."
     | VAlways (tp, vp), Always (i, f) ->
        Printf.sprintf "\\infer[\\Valways{}]{%s, %d \\nvd %s}\n%s{{%d \\geq %d} & {\\tau_%d - \\tau_%d \\in %s} & {%s}}\n"
          (val_changes_to_latex v) (v_at p) (Formula.to_latex h) indent
@@ -895,6 +927,7 @@ module Proof = struct
       | SHistorically (_, _, sps) -> 1 + sum s sps
       | SHistoricallyOut _ -> 1
       | SAlways (_, _, sps) -> 1 + sum s sps
+      | SAgg (_, pdt) -> 1 + (Pdt.fold pdt 0 (fun a spvp -> a + p spvp))
       | SSince (sp2, sp1s) -> 1 + s sp2 + sum s sp1s
       | SUntil (sp2, sp1s) -> 1 + s sp2 + sum s sp1s
     and v = function
@@ -922,13 +955,14 @@ module Proof = struct
       | VEventually (_, _, vp1s) -> 1 + sum v vp1s
       | VHistorically (_, vp1) -> 1 + v vp1
       | VAlways (_, vp1) -> 1 + v vp1
+      | VAgg (_, pdt) -> 1 + (Pdt.fold pdt 0 (fun a spvp -> a + p spvp))
+      | VAggG (_) -> 1 (* Probably not correct since we need to change the proof object definition of VAggG. *)
       | VSinceOut _ -> 1
       | VSince (_, vp1, vp2s) -> 1 + v vp1 + sum v vp2s
       | VSinceInf (_, _, vp2s) -> 1 + sum v vp2s
       | VUntil (_, vp1, vp2s) -> 1 + v vp1 + sum v vp2s
       | VUntilInf (_, _, vp2s) -> 1 + sum v vp2s
-
-    let p = function
+    and p = function
       | S s_p -> s s_p
       | V v_p -> v v_p
 
