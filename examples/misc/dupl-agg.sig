@@ -1,0 +1,1 @@
+p(g:string, x:enat)

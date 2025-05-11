@@ -58,6 +58,8 @@ val trigger: Interval.t -> t -> t -> t
 val release: Interval.t -> t -> t -> t
 val agg: string -> agg_op -> string -> string list -> t -> t
 
+val agg_op_equal: agg_op * agg_op -> bool
+
 val quant_check: string list -> t -> unit
 
 val fv: t -> (String.t, Base.String.comparator_witness) Base.Set.t
@@ -73,6 +75,7 @@ val subfs_scope: t -> int -> (int * (int list * int list)) list
 val preds: t -> t list
 val pred_names: t -> (string, Base.String.comparator_witness) Base.Set.t
 
+val agg_op_to_string: agg_op -> string
 val op_to_string: t -> string
 val to_string: bool -> t -> string
 val to_json: t -> string

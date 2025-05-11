@@ -88,6 +88,13 @@ let quant_check xs f =
     | Some x -> raise (Invalid_argument (Printf.sprintf "bound variable %s does not appear in subformula" x))
     | None -> ()
 
+let agg_op_equal = function
+  | Cnt, Cnt 
+  | Sum, Sum 
+  | Sup, Sup 
+  | Min, Min -> true 
+  | _ -> false
+
 (* Checks whether two operators are directly equal. *)
 let equal x y = match x, y with
   | TT, TT | FF, FF -> true
@@ -108,7 +115,7 @@ let equal x y = match x, y with
     | Always (i, f), Always (i', f') -> Interval.equal i i' && phys_equal f f'
   | Since (i, f, g), Since (i', f', g')
     | Until (i, f, g), Until (i', f', g') -> Interval.equal i i' && phys_equal f f' && phys_equal g g'
-  | Agg (y, op, t, gs, f), Agg (y', op', t', gs', f') -> String.equal y y' && (match op, op' with Cnt, Cnt | Sum, Sum | Sup, Sup | Min, Min -> true | _ -> false) && String.equal t t' && List.equal String.equal gs gs' && phys_equal f f'
+  | Agg (y, op, t, gs, f), Agg (y', op', t', gs', f') -> String.equal y y' && (agg_op_equal (op, op')) && String.equal t t' && List.equal String.equal gs gs' && phys_equal f f'
   | _ -> false
 
 (* Returns all free variables in a formula. *)
@@ -317,10 +324,10 @@ let pred_names f =
   pred_names_rec (Set.empty (module String)) f
 
 let agg_op_to_string = function
-| Cnt -> "CNT"
-| Sum -> "SUM"
-| Sup -> "SUP"
-| Min -> "MIN"
+  | Cnt -> "CNT"
+  | Sum -> "SUM"
+  | Sup -> "SUP"
+  | Min -> "MIN"
 
 let op_to_string = function
   | TT -> Printf.sprintf "⊤"
@@ -367,6 +374,7 @@ let rec to_string_rec l json = function
                          (fun _ -> Interval.to_string) i (fun _ -> to_string_rec 5 json) g
   | Until (i, f, g) -> Printf.sprintf (Etc.paren l 0 "%a U%a %a") (fun _ -> to_string_rec 5 json) f
                          (fun _ -> Interval.to_string) i (fun _ -> to_string_rec 5 json) g
+  | Agg (y, op, t, gs, f) -> Printf.sprintf "Formula to_string_rec Agg: To be implemented!"
 let to_string json = to_string_rec 0 json
 
 let rec to_json_rec indent pos f =

@@ -26,8 +26,10 @@ module Part : sig
   val fold_left: 'a t -> 'b -> ('b -> 'a -> 'b) -> 'b
   val filter: 'a t -> ('a -> bool) -> 'a t
   val exists: 'a t -> ('a -> bool) -> bool
+  val find: 'a t -> ('a -> bool) -> (sub * 'a) option
   val for_all: 'a t -> ('a -> bool) -> bool
   val values: 'a t -> 'a list
+  val keys: 'a t -> sub list
   val tabulate: (Dom.t, Dom.comparator_witness) Set.t -> (Dom.t -> 'a) -> 'a -> 'a t
 
   val dedup: ('a -> 'a -> bool) -> 'a t -> 'a t
@@ -48,6 +50,8 @@ module Pdt : sig
   val split_list: 'a list t -> 'a t list
   val hide: string list -> ('a -> 'b) -> ('a Part.t -> 'b) -> 'a t -> 'b t
   val to_string: (string -> 'a -> string) -> string -> 'a t -> string
+  val unleaf: 'a t -> 'a
+  val fst_leaf: 'a t -> 'a
   val fold: 'a t -> 'b -> ('b -> 'a -> 'b) -> 'b
 
   val equal: ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
@@ -84,7 +88,7 @@ module Proof : sig
     | SHistorically of int * int * sp Fdeque.t
     | SHistoricallyOut of int
     | SAlways of int * int * sp Fdeque.t
-    | SAgg of string * p Pdt.t
+    | SAgg of Formula.agg_op * p Pdt.t
     | SSince of sp * sp Fdeque.t
     | SUntil of sp * sp Fdeque.t
   and vp =
@@ -112,8 +116,8 @@ module Proof : sig
     | VEventually of int * int * vp Fdeque.t
     | VHistorically of int * vp
     | VAlways of int * vp
-    | VAgg of string * p Pdt.t
-    | VAggG of int * string list (* The int denotes the time-point since we cannot otherwise infer it. Needs to be changed. *)
+    | VAgg of Formula.agg_op * p Pdt.t
+    | VAggG of p Pdt.t
     | VSinceOut of int
     | VSince of int * vp * vp Fdeque.t
     | VSinceInf of int * int * vp Fdeque.t

@@ -67,6 +67,7 @@ rule token = parse
   | "("                                           { debug "LPA"; LPA }
   | ")"                                           { debug "RPA"; RPA }
   | digits as d                                   { debug ("INT " ^ d); INT (Base.Int.of_string d) }
+  | "n"(digits as nd)                             { debug ("ENAT " ^ nd); ENAT (Base.Int.of_string nd) }
   | string as s                                   { debug ("STR " ^ s); STR s }
   | quoted_string as qs                           { debug ("QSTR " ^ qs); QSTR qs }
   | _ as c                                        { lexing_error lexbuf "unexpected character: `%c'" c }

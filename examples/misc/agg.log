@@ -1,1 +1,6 @@
-@0 q(10,a) q(20, a) q(30, b) q(40, b)
+@0 transaction(1, alice, 10, 1)
+   transaction(2, alice, 10, 4)
+   transaction(3, bob, 50, 2)
+   transaction(4, bob, 30, 2)
+   transaction(5, charlie, 35, 3)
+   transaction(6, charlie, 20, 3)

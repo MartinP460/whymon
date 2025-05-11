@@ -28,6 +28,7 @@ let debug m = if !debug then Stdio.print_endline ("[debug] formula_parser: " ^ m
 %token <string> STR
 %token <string> QSTR
 %token <int> INT
+%token <int> ENAT
 
 %token FALSE
 %token TRUE
@@ -105,8 +106,8 @@ e:
                                          until $3 $1 $4 }
 | e UNTIL e                              { debug "e UNTIL e";
                                          raise (Invalid_argument "unbounded future operator: until") }
-| STR LARROW aggop STR e                 { debug "STR LARROW STR STR SEMI e"; quant_check [$4] $5; agg $1 $3 $4 [] $5 }
-| STR LARROW aggop STR SEMI vars e       { debug "STR LARROW STR STR SEMI STR e"; quant_check [$4] $7; quant_check $6 $7; agg $1 $3 $4 $6 $7 }
+| STR LARROW aggop STR SEMI e            { debug "STR LARROW STR STR SEMI e"; quant_check [$4] $6; agg $1 $3 $4 [] $6 }
+| STR LARROW aggop STR SEMI vars e       { debug "STR LARROW STR STR SEMI vars e"; quant_check [$4] $7; quant_check $6 $7; agg $1 $3 $4 $6 $7 }
 | e TRIGGER INTERVAL e                   { debug "e TRIGGER INTERVAL e"; trigger $3 $1 $4 }
 | e TRIGGER e                            { debug "e TRIGGER e"; trigger Interval.full $1 $3 }
 | e RELEASE INTERVAL e                   { debug "e RELEASE INTERVAL e";
@@ -123,6 +124,7 @@ term:
 
 const:
 | INT                                    { debug "INT"; Pred.Term.Const (Int $1) }
+| ENAT                                   { debug "ENAT"; Pred.Term.Const (ENat (Nat $1)) }
 | QSTR                                   { debug "QSTR"; Pred.Term.Const (Str (Etc.unquote $1)) }
 
 terms:

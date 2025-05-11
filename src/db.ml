@@ -44,7 +44,11 @@ let event name consts =
              ~f:(fun tc c -> match snd tc with
                              | TInt -> Dom.Int (Int.of_string c)
                              | TStr -> Str c
-                             | TFloat -> Float (Float.of_string c)))
+                             | TFloat -> Float (Float.of_string c)
+                             | TENat -> ENat (if String.equal c "INF" then Inf else (
+                              let c_int = (Int.of_string c) in
+                              if c_int >= 0 then Nat c_int else raise (Invalid_argument (Printf.sprintf "%s is not an extended natural number" c))
+                             ))))
   else raise (Invalid_argument (Printf.sprintf "predicate %s has arity %d" name pred_sig.arity))
 
 let add_event db evt = Set.add db evt

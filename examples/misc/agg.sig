@@ -1,1 +1,1 @@
-q(x:int,y:string)
+transaction(id:enat, user:string, amount:enat, cardId:enat)

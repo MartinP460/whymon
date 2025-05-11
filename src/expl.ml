@@ -38,9 +38,13 @@ module Part = struct
 
   let exists part f = List.exists part ~f:(fun (_, p) -> f p)
 
+  let find part f = List.find part ~f:(fun (_, p) -> f p)
+
   let for_all part f = List.for_all part ~f:(fun (_, p) -> f p)
 
   let values part = List.map part ~f:(fun (_, p) -> p)
+
+  let keys part = List.map part ~f:(fun (s, _) -> s)
 
   let equal part part' eq =
     let equal_fst = match List.for_all2 (List.map part ~f:fst) (List.map part' ~f:fst) ~f:Setc.equal with
@@ -332,7 +336,7 @@ module Proof = struct
     | SHistorically of int * int * sp Fdeque.t
     | SHistoricallyOut of int
     | SAlways of int * int * sp Fdeque.t
-    | SAgg of string * p Pdt.t
+    | SAgg of Formula.agg_op * p Pdt.t (* Change this *)
     | SSince of sp * sp Fdeque.t
     | SUntil of sp * sp Fdeque.t
   and vp =
@@ -360,8 +364,8 @@ module Proof = struct
     | VEventually of int * int * vp Fdeque.t
     | VHistorically of int * vp
     | VAlways of int * vp
-    | VAgg of string * p Pdt.t
-    | VAggG of int * string list (* The int denotes the time-point since we cannot otherwise infer it. Needs to be changed. *)
+    | VAgg of Formula.agg_op * p Pdt.t 
+    | VAggG of p Pdt.t
     | VSinceOut of int
     | VSince of int * vp * vp Fdeque.t
     | VSinceInf of int * int * vp Fdeque.t
@@ -404,7 +408,7 @@ module Proof = struct
        Int.equal tp tp' && Int.equal ltp li' &&
          Int.equal (Fdeque.length sps) (Fdeque.length sps') &&
            Etc.fdeque_for_all2_exn sps sps' ~f:(fun sp sp' -> s_equal sp sp')
-    | SAgg (op, pdt), SAgg (op', pdt') -> String.equal op op' && Pdt.equal (fun p p' -> equal p p') pdt pdt'
+    | SAgg (op, pdt), SAgg (op', pdt') -> Formula.agg_op_equal (op, op') && Pdt.equal (fun p p' -> equal p p') pdt pdt'
     | SAlways (tp, htp, sps), SAlways (tp', hi', sps') ->
        Int.equal tp tp' && Int.equal htp hi' &&
          Int.equal (Fdeque.length sps) (Fdeque.length sps') &&
@@ -453,8 +457,8 @@ module Proof = struct
            Etc.fdeque_for_all2_exn vps vps' ~f:(fun vp vp' -> v_equal vp vp')
     | VHistorically (tp, _), VHistorically (tp', _)
       | VAlways (tp, _), VAlways (tp', _) -> Int.equal tp tp'
-    | VAgg (op, pdt), VAgg (op', pdt') -> String.equal op op' && Pdt.equal (fun p p' -> equal p p') pdt pdt'
-    | VAggG (tp, xs), VAggG (tp', xs') -> Int.equal tp tp' && List.equal String.equal xs xs'
+    | VAgg (op, pdt), VAgg (op', pdt') -> Formula.agg_op_equal (op, op') && Pdt.equal (fun p p' -> equal p p') pdt pdt'
+    | VAggG (pdt), VAggG (pdt') -> Pdt.equal (fun p p' -> equal p p') pdt pdt'
     | VSince (tp, vp1, vp2s), VSince (tp', vp1', vp2s')
       | VUntil (tp, vp1, vp2s), VUntil (tp', vp1', vp2s') ->
        Int.equal tp tp' && v_equal vp1 vp1' &&
@@ -475,12 +479,12 @@ module Proof = struct
     | V vp, V vp' -> v_equal vp vp'
     | _ -> false
 
-  (* Extracts a satisfaction proof object from union S. *)
+  (* Extracts a satisfaction proof object from constructor S. *)
   let unS = function
     | S sp -> sp
     | _ -> raise (Invalid_argument "unS is not defined for V proofs")
 
-  (* Extracts a violation proof object from union V. *)
+  (* Extracts a violation proof object from constructor V. *)
   let unV = function
     | V vp -> vp
     | _ -> raise (Invalid_argument "unV is not defined for S proofs")
@@ -578,8 +582,8 @@ module Proof = struct
     | VOnce (tp, _, _) -> tp
     | VEventually (tp, _, _) -> tp
     | VHistorically (tp, _) -> tp
+    | VAggG (pdt)
     | VAgg (_, pdt) -> p_at (Pdt.fst_leaf pdt)
-    | VAggG (tp, _) -> tp
     | VAlways (tp, _) -> tp
     | VSinceOut tp -> tp
     | VSince (tp, _, _) -> tp
@@ -633,7 +637,7 @@ module Proof = struct
     | SHistoricallyOut i -> Printf.sprintf "%sSHistoricallyOut{%d}" indent i
     | SAlways (_, ltp, sps) -> Printf.sprintf "%sSAlways{%d}{%d}\n%s" indent (s_at p) ltp
                                  (Etc.deque_to_string indent' s_to_string sps)
-    | SAgg (_, _) -> Printf.sprintf "s_to_string -> SAgg case: To be implemented."
+    | SAgg (op, pdt) -> Printf.sprintf "%sSAgg{%s, PDT: \n\n%s\n%s}\n" indent (Formula.agg_op_to_string op) (Pdt.to_string to_string indent pdt) indent
     | SSince (sp2, sp1s) -> Printf.sprintf "%sSSince{%d}\n%s\n%s" indent (s_at p) (s_to_string indent' sp2)
                               (Etc.deque_to_string indent' s_to_string sp1s)
     | SUntil (sp2, sp1s) -> Printf.sprintf "%sSUntil{%d}\n%s\n%s" indent (s_at p)
@@ -671,8 +675,8 @@ module Proof = struct
                                      (Etc.deque_to_string indent' v_to_string vps)
     | VHistorically (_, vp) -> Printf.sprintf "%sVHistorically{%d}\n%s" indent (v_at p) (v_to_string indent' vp)
     | VAlways (_, vp) -> Printf.sprintf "%sVAlways{%d}\n%s" indent (v_at p) (v_to_string indent' vp)
-    | VAgg (_, _) -> Printf.sprintf "v_to_string -> VAgg case: To be implemented."
-    | VAggG (_) -> Printf.sprintf "v_to_string -> VAggG case: To be implemented."
+    | VAgg (op, pdt) -> Printf.sprintf "%sVAgg{%s, PDT: \n\n%s\n%s}\n" indent (Formula.agg_op_to_string op) (Pdt.to_string to_string indent pdt) indent
+    | VAggG (pdt) -> Printf.sprintf "%sVAggG{PDT: \n\n%s\n%s}\n" indent (Pdt.to_string to_string indent pdt) indent
     | VSinceOut i -> Printf.sprintf "%sVSinceOut{%d}" indent i
     | VSince (_, vp1, vp2s) -> Printf.sprintf "%sVSince{%d}\n%s\n%s" indent (v_at p) (v_to_string indent' vp1)
                                  (Etc.deque_to_string indent' v_to_string vp2s)
@@ -682,8 +686,7 @@ module Proof = struct
                                  (Etc.deque_to_string indent' v_to_string vp2s) (v_to_string indent' vp1)
     | VUntilInf (_, ltp, vp2s) -> Printf.sprintf "%sVUntilInf{%d}{%d}\n%s" indent (v_at p) ltp
                                     (Etc.deque_to_string indent' v_to_string vp2s)
-
-  let to_string indent = function
+  and to_string indent = function
     | S p -> s_to_string indent p
     | V p -> v_to_string indent p
 
@@ -866,7 +869,7 @@ module Proof = struct
          (val_changes_to_latex v) (v_at p) (Formula.to_latex h) indent
          (v_at vp) tp tp (v_at vp) (Interval.to_latex i) (v_to_latex indent' v idx vp f)
     | VAgg (_, _), Agg (_) -> Printf.sprintf "v_to_latex -> VAgg: To be implemented."
-    | VAggG (_, _), Agg (_) -> Printf.sprintf "v_to_latex -> VAggG: To be implemented."
+    | VAggG (_), Agg (_) -> Printf.sprintf "v_to_latex -> VAggG: To be implemented."
     | VAlways (tp, vp), Always (i, f) ->
        Printf.sprintf "\\infer[\\Valways{}]{%s, %d \\nvd %s}\n%s{{%d \\geq %d} & {\\tau_%d - \\tau_%d \\in %s} & {%s}}\n"
          (val_changes_to_latex v) (v_at p) (Formula.to_latex h) indent

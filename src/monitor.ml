@@ -1279,7 +1279,9 @@ module MFormula = struct
     | MAlways       of Interval.t * t * (Expl.t, timestamp * timepoint) Buft.t * Always.t Expl.Pdt.t
     | MSince        of Interval.t * t * t * (Expl.t, Expl.t, timestamp * timepoint) Buf2t.t * Since.t Expl.Pdt.t
     | MUntil        of Interval.t * t * t * (Expl.t, Expl.t, timestamp * timepoint) Buf2t.t * Until.t Expl.Pdt.t
+    | MAgg          of string * Formula.agg_op * string * string list * string list * t
 
+  (* Returns the type of values in the predicates. *)
   let rec var_tt x = function
     | MTT | MFF -> []
     | MEqConst _ -> []
@@ -1295,7 +1297,8 @@ module MFormula = struct
       | MOnce (_, f, _, _)
       | MEventually (_, f, _, _)
       | MHistorically (_, f, _, _)
-      | MAlways (_, f, _, _) -> var_tt x f
+      | MAlways (_, f, _, _) 
+      | MAgg (_, _, _, _, _, f) -> var_tt x f
     | MAnd (f, g, _)
       | MOr (f, g, _)
       | MImp (f, g, _)
@@ -1303,6 +1306,7 @@ module MFormula = struct
       | MSince (_, f, g, _, _)
       | MUntil (_, f, g, _, _) -> var_tt x f @ var_tt x g
 
+  (* Initializes an MFormula from a Formula. *)
   let rec init = function
     | Formula.TT -> MTT
     | Formula.FF -> MFF
@@ -1323,17 +1327,21 @@ module MFormula = struct
     | Formula.Always (i, f) -> MAlways (i, init f, ([], []), Leaf (Always.init ()))
     | Formula.Since (i, f, g) -> MSince (i, init f, init g, (([], []), []), Leaf (Since.init ()))
     | Formula.Until (i, f, g) -> MUntil (i, init f, init g, (([], []), []), Leaf (Until.init ()))
+    | Formula.Agg (y, op, t, gs, f) -> MAgg (y, op, t, gs, (List.filter (Set.elements (Formula.fv f)) ~f:(fun g -> not (List.exists (t :: gs) ~f:(fun g' -> String.equal g g')))), init f)
 
+  (* Tests whether two lists of timestamp lists are equal. *)
   let tss_equal tss tss' =
     match List.for_all2 tss tss' ~f:Int.equal with
     | Ok b -> b
     | Unequal_lengths -> false
 
+  (* Tests whether two lists of tuples consisting of a timestamp and a timepoint are equal. *)
   let tstps_equal tstps tstps' =
     match List.for_all2 tstps tstps' ~f:tstp_equal with
     | Ok b -> b
     | Unequal_lengths -> false
 
+  (* Tests whether two MFormulas are equal. *)
   let rec equal mf mf' = match mf, mf' with
     | MTT, MTT -> true
     | MFF, MFF -> true
@@ -1380,6 +1388,9 @@ module MFormula = struct
     | MUntil (i, mf1, mf2, buf2t, muaux_pdt), MUntil (i', mf1', mf2', buf2t', muaux_pdt') ->
        Interval.equal i i' && Buf2t.equal buf2t buf2t' Expl.equal Expl.equal tstp_equal &&
          equal mf1 mf1' && equal mf2 mf2' && (Pdt.equal Until.equal) muaux_pdt muaux_pdt'
+    | MAgg (y, op, t, gs, _, mf), MAgg (y', op', t', gs', _, mf') -> String.equal y y' && 
+       Formula.agg_op_equal (op, op') && String.equal t t' && 
+         List.equal String.equal gs gs' && equal mf mf'
 
   let rec to_string_rec l = function
     | MTT -> Printf.sprintf "⊤"
@@ -1403,6 +1414,7 @@ module MFormula = struct
                                   (fun x -> to_string_rec 5) g
     | MUntil (i, f, g, _, _) -> Printf.sprintf (Etc.paren l 0 "%a U%a %a") (fun x -> to_string_rec 5) f (fun x -> Interval.to_string) i
                                   (fun x -> to_string_rec 5) g
+    | MAgg (_, _, _, _, _, _) -> Printf.sprintf "to_string_rec -> MAgg case: To be implemented."
   let to_string = to_string_rec 0
 
 end
@@ -1478,6 +1490,117 @@ let rec match_terms trms ds map =
                                                 | None -> let map'' = Map.add_exn map' ~key:x ~data:d in Some(map'')
                                                 | Some z -> (if Dom.equal d z then Some map' else None)))
   | _, _ -> None
+
+let rec agg_cnt mul is_t part =
+  match part with
+  | [] -> Dom.ENat (Nat 0)
+  | (s, _) :: part ->
+    match s with
+    | Setc.Finite d -> let d = Set.to_list d in
+                       if is_t then Dom.enat_add ((Dom.enat_mul (ENat (Nat (List.length d)), mul)), (agg_cnt mul is_t part))
+                       else Dom.enat_add (Dom.enat_mul (List.hd_exn d, mul), (agg_cnt mul is_t part))
+    | Complement _ -> ENat Inf
+
+let rec agg_sum mul is_t part =
+  match part with
+  | [] -> Dom.ENat (Nat 0)
+  | (s, _) :: part ->
+    match s with
+    | Setc.Finite d -> let crnt = List.fold (Set.to_list d) ~init:(Dom.ENat (Nat 0)) ~f:(fun acc v -> Dom.enat_add (acc, v)) in
+                       Dom.enat_add ((Dom.enat_mul (crnt, mul)), (agg_sum mul is_t part))
+    | Complement _ -> ENat Inf
+
+let rec agg_sup mul is_t part =
+  match part with
+  | [] -> Dom.ENat (Nat 0)
+  | (s, _) :: part -> 
+    match s with
+    | Setc.Finite d -> 
+      let crnt = List.fold (Set.to_list d) ~init:(Dom.ENat (Nat 0)) ~f:(fun acc v -> Dom.enat_sup (acc, v)) in
+      Dom.enat_sup (crnt, (agg_sup mul is_t part))
+    | Complement _ -> ENat Inf
+
+let rec agg_min mul is_t part =
+  match part with
+  | [] -> Dom.ENat Inf
+  | (s, _) :: part ->
+    match s with
+    | Setc.Finite d ->
+      let crnt = List.fold (Set.to_list d) ~init:(Dom.ENat Inf) ~f:(fun acc v -> Dom.enat_min (acc, v)) in
+      Dom.enat_min (crnt, (agg_min mul is_t part))
+    | Complement _ -> ENat Inf
+
+let get_agg_op = function
+  | Formula.Cnt -> agg_cnt
+  | Formula.Sum -> agg_sum
+  | Formula.Sup -> agg_sup
+  | Formula.Min -> agg_min
+
+(* Performs aggregation from a partition and returns a PDT node with the result variable and new partition. *)
+let do_agg (v: string) op mul is_t part pdt =
+  let sats = Part.filter part (fun p -> Proof.isS (Pdt.unleaf p)) in
+
+  let agg_op = get_agg_op op in
+  let omega_m = agg_op mul is_t sats in
+  let d = Set.of_list (module Dom) [omega_m] in
+
+  Pdt.Node (v, (Part.map2_dedup (fun p p' ->
+                                  match Pdt.unleaf p, Pdt.unleaf p' with 
+                                  | Proof.S _, S _ 
+                                  | V _, V _ -> true 
+                                  | _ -> false) part
+                                (fun (_, p) -> match (Pdt.unleaf p) with
+                                 | S _ -> (Finite d, Leaf (S (SAgg (op, pdt))))
+                                 | V _ -> (Complement d, Leaf (V (VAgg (op, pdt)))))))
+
+(* Computes the multiplicity from the current multiplicity and assignments s. *)
+let get_mul (mul: Dom.t) (s: Part.sub) = (Dom.ENat (
+  match mul with
+  | ENat en -> (match en, s with Nat n, Setc.Finite s' -> Nat ((Set.length s') * n) | _ -> Inf)
+  | _ -> raise (Invalid_argument "Aggregations only defined for natural numbers")))
+
+(* Transforms a PDT into a valid aggregation PDT. *)
+let agg_hide vars y op t gs pdt =
+  let rec agg_hide_rec vars y op t gs mul pdt =
+    match vars, pdt with
+    (* If it's a leaf, return the leaf unchanged. *)
+    | _, Pdt.Leaf p -> Pdt.Leaf p
+    (* If it's one of the nodes to which to apply the aggregation, transform the node and its partition into the structure of aggregations. *)
+    | [_], Pdt.Node (z, part) -> do_agg y op mul true part (Pdt.Node (z, part))
+    (* Else, it's either a grouping- (g) or non-grouping-aggregation variable (z). *)
+    | x :: vars, Pdt.Node (z, part) ->
+      (* If it's a grouping variable... *)
+      if (not (List.is_empty gs) && String.equal x (List.hd_exn gs)) then
+        let tlgs = List.tl_exn gs in
+        Pdt.Node(z, Part.map2 part (fun (s, p) -> (s,
+          match tlgs, s with
+          (* If it's the last level of grouping variables (tail of gs is empty) and it's a complement, we have VAggG. *)
+          | [], Complement _ -> Node (y, [(Complement (Set.empty (module Dom)), Leaf (V (VAggG pdt)))])
+          (* Otherwise call agg_hide_rec recursively. *)
+          | _ -> agg_hide_rec vars y op t tlgs (get_mul mul s) p)))
+      (* If it's a non-grouping-aggregation variable (z)... *)
+      else
+        (* Compute the result of the aggregation on all it's child nodes. *)
+        let part' = Part.map2 part (fun (s, p) -> (s, agg_hide_rec vars y op t gs (get_mul mul s) p)) in
+        (* Combine the partitions of all child nodes into a single partition. *)
+        let concat_part' = List.fold part' ~init:[] ~f:(fun acc (s, p) -> acc @ (match p with Node (_, part'') -> part'')) in
+
+        (* Compute the aggregation of the combined partition. *)
+        do_agg y op mul false concat_part' (Pdt.Node (z, part)) in
+  agg_hide_rec vars y op t gs (Dom.ENat (Nat 1)) pdt
+
+let agg_default y op pdt =
+  let default = match op with
+  | Formula.Cnt | Sum | Sup -> Dom.ENat (Nat 0)
+  | Min -> ENat Inf in
+  let d = Set.of_list (module Dom) [default] in
+  
+  match pdt with
+  | Pdt.Leaf p -> Pdt.Leaf p
+  | Node _ -> Node (y, [
+    (Finite d, Leaf (Proof.S (SAgg (op, pdt))));
+    (Complement d, Leaf (V (VAgg (op, pdt))))
+  ])
 
 let print_maps maps =
   Stdio.print_endline "> Map:";
@@ -1669,6 +1792,14 @@ let rec meval vars ts tp (db: Db.t) is_vis = function
      let expls'' = List.map expls' ~f:(Pdt.reduce Proof.equal) in
      let muaux_pdt'' = if is_vis then muaux_pdt' else Pdt.reduce Until.equal muaux_pdt' in
      (expls'', MUntil (i, mf1', mf2', (buf2', ntstps'), muaux_pdt''))
+  | MAgg (y, op, t, gs, zs, mf) ->
+    let vars = gs @ zs @ [t] in (* Order of vars is not preserved when converting to Set so we create it manually. *)
+    let (expls, mf) = meval vars ts tp db is_vis mf in
+    (* let () = List.iter expls (fun expl -> printf "%s" (Expl.to_string expl)) in *)
+    let expls' = List.map expls ~f:(fun expl ->
+      if (Set.is_empty db && List.is_empty gs) then agg_default y op expl
+      else Pdt.reduce Proof.equal (agg_hide vars y op t gs expl)) in
+    (expls', mf)
 
 module MState = struct
 
