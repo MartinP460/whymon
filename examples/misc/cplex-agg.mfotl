@@ -1,0 +1,1 @@
+FORALL id. s <- SUM amount;id. (trs(id, amount))

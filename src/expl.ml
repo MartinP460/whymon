@@ -243,7 +243,7 @@ module Pdt = struct
 
   let rec fst_leaf = function
     | Leaf l -> l
-    | Node (_, part) -> fst_leaf (Part.hd part) (* This assumes that all nodes have leaves. *)
+    | Node (_, part) -> fst_leaf (Part.hd part)
   
   let rec fold pdt init f = match pdt with
     | Leaf l -> f init l
@@ -930,7 +930,7 @@ module Proof = struct
       | SHistorically (_, _, sps) -> 1 + sum s sps
       | SHistoricallyOut _ -> 1
       | SAlways (_, _, sps) -> 1 + sum s sps
-      | SAgg (_, pdt) -> 1 + (Pdt.fold pdt 0 (fun a spvp -> a + p spvp))
+      | SAgg (_, pdt) -> 1 + (Pdt.fold pdt 0 (fun a svp -> a + p svp))
       | SSince (sp2, sp1s) -> 1 + s sp2 + sum s sp1s
       | SUntil (sp2, sp1s) -> 1 + s sp2 + sum s sp1s
     and v = function
@@ -958,8 +958,8 @@ module Proof = struct
       | VEventually (_, _, vp1s) -> 1 + sum v vp1s
       | VHistorically (_, vp1) -> 1 + v vp1
       | VAlways (_, vp1) -> 1 + v vp1
-      | VAgg (_, pdt) -> 1 + (Pdt.fold pdt 0 (fun a spvp -> a + p spvp))
-      | VAggG (_) -> 1 (* Probably not correct since we need to change the proof object definition of VAggG. *)
+      | VAgg (_, pdt)
+      | VAggG (pdt) -> 1 + (Pdt.fold pdt 0 (fun a spvp -> a + p spvp))
       | VSinceOut _ -> 1
       | VSince (_, vp1, vp2s) -> 1 + v vp1 + sum v vp2s
       | VSinceInf (_, _, vp2s) -> 1 + sum v vp2s

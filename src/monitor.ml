@@ -1254,6 +1254,133 @@ module Prev_Next = struct
 
 end
 
+module Agg = struct
+  
+  let rec agg_cnt mul is_t part =
+    match part with
+    | [] -> Dom.ENat (Nat 0)
+    | (s, _) :: part ->
+      match s with
+      | Setc.Finite d -> let d = Set.to_list d in
+                         if is_t then Dom.enat_add ((Dom.enat_mul (ENat (Nat (List.length d)), mul)), (agg_cnt mul is_t part))
+                         else Dom.enat_add (Dom.enat_mul (List.hd_exn d, mul), (agg_cnt mul is_t part))
+      | Complement _ -> ENat Inf
+  
+  let rec agg_sum mul is_t part =
+    match part with
+    | [] -> Dom.ENat (Nat 0)
+    | (s, _) :: part ->
+      match s with
+      | Setc.Finite d -> let crnt = List.fold (Set.to_list d) ~init:(Dom.ENat (Nat 0)) ~f:(fun acc v -> Dom.enat_add (acc, v)) in
+                         Dom.enat_add ((Dom.enat_mul (crnt, mul)), (agg_sum mul is_t part))
+      | Complement _ -> ENat Inf
+  
+  let rec agg_sup mul is_t part =
+    match part with
+    | [] -> Dom.ENat (Nat 0)
+    | (s, _) :: part -> 
+      match s with
+      | Setc.Finite d ->
+        let crnt = List.fold (Set.to_list d) ~init:(Dom.ENat (Nat 0)) ~f:(fun acc v -> Dom.enat_sup (acc, v)) in
+        Dom.enat_sup (crnt, (agg_sup mul is_t part))
+      | Complement _ -> ENat Inf
+  
+  let rec agg_min mul is_t part =
+    match part with
+    | [] -> Dom.ENat Inf
+    | (s, _) :: part ->
+      match s with
+      | Setc.Finite d ->
+        let crnt = List.fold (Set.to_list d) ~init:(Dom.ENat Inf) ~f:(fun acc v -> Dom.enat_min (acc, v)) in
+        Dom.enat_min (crnt, (agg_min mul is_t part))
+      | Complement _ -> ENat Inf
+  
+  let get_agg_op = function
+    | Formula.Cnt -> agg_cnt
+    | Formula.Sum -> agg_sum
+    | Formula.Sup -> agg_sup
+    | Formula.Min -> agg_min
+
+  (* Performs aggregation from a partition and returns a PDT node with the result variable and new partition. *)
+  let do_agg (v: string) op mul is_t part pdt =
+    let sats = Part.filter part (fun p -> Proof.isS (Pdt.unleaf p)) in
+  
+    let agg_op = get_agg_op op in
+    let omega_m = agg_op mul is_t sats in
+    let d = Set.of_list (module Dom) [omega_m] in
+  
+    Pdt.Node (v, (Part.map2_dedup (fun p p' ->
+                                    match Pdt.unleaf p, Pdt.unleaf p' with 
+                                    | Proof.S _, S _ 
+                                    | V _, V _ -> true 
+                                    | _ -> false) part
+                                  (fun (_, p) -> match (Pdt.unleaf p) with
+                                   | S _ -> (Finite d, Leaf (S (SAgg (op, pdt))))
+                                   | V _ -> (Complement d, Leaf (V (VAgg (op, pdt)))))))
+  
+  (* Computes the multiplicity from the current multiplicity and assignments s. *)
+  let get_mul (mul: Dom.t) (s: Part.sub) = (Dom.ENat (
+    match mul with
+    | ENat en -> (match en, s with Nat n, Setc.Finite s' -> Nat ((Set.length s') * n) | _ -> Inf)
+    | _ -> raise (Invalid_argument "Aggregations only defined for natural numbers")))
+  
+  (* Removes g-level nodes from a PDT of complements. *)
+  let rec filter_g gs pdt =
+    match pdt with
+    | Pdt.Leaf p -> Pdt.Leaf p
+    | Node (x, part) ->
+        if (List.exists gs (fun g -> String.equal x g)) then
+          filter_g (List.filter gs (fun g -> not (String.equal x g))) (snd (List.hd_exn part))
+        else
+          Node (x, part)
+  
+  (* Transforms a PDT into a valid aggregation PDT. *)
+  let hide vars y op t gs pdt =
+    let rec hide_rec vars y op t gs mul pdt =
+      match vars, pdt with
+      (* If it's a leaf, return the leaf unchanged. *)
+      | _, Pdt.Leaf p -> Pdt.Leaf p
+      (* If it's one of the nodes to which to apply the aggregation, transform the node and its partition into the structure of aggregations. *)
+      | [_], Pdt.Node (z, part) -> do_agg y op mul true part (Pdt.Node (z, part))
+      (* Else, it's either a grouping- (g) or non-grouping-aggregation variable (z). *)
+      | x :: vars, Pdt.Node (z, part) ->
+        (* If it's a grouping variable... *)
+        if (List.exists gs (fun g -> String.equal g x)) then
+          Pdt.Node(z, Part.map2 part (fun (s, p) -> (s,
+            match s with
+            (* If it's a complement, we have VAggG. *)
+            | Complement _ ->
+              let pdt' = filter_g (List.filter gs (fun g -> not (String.equal g x))) p in
+              Leaf (V (VAggG pdt'))
+            (* Otherwise call hide_rec recursively. *)
+            | _ -> hide_rec vars y op t gs (get_mul mul s) p)))
+        (* If it's a non-grouping-aggregation variable (z)... *)
+        else
+          (* Compute the result of the aggregation on all it's child nodes. *)
+          let part' = Part.map2 part (fun (s, p) -> (s, hide_rec vars y op t gs (get_mul mul s) p)) in
+          (* Combine the partitions of all child nodes into a single partition. *)
+          let concat_part' = List.fold part' ~init:[] ~f:(fun acc (s, p) -> acc @ (match p with Node (_, part'') -> part'')) in
+  
+          (* Compute the aggregation of the combined partition. *)
+          do_agg y op mul false concat_part' (Pdt.Node (z, part)) in
+    hide_rec vars y op t gs (Dom.ENat (Nat 1)) pdt
+  
+  let default y op pdt =
+    let value = match op with
+    | Formula.Cnt | Sum | Sup -> Dom.ENat (Nat 0)
+    | Min -> ENat Inf in
+
+    let d = Set.of_list (module Dom) [value] in
+    
+    match pdt with
+    | Pdt.Leaf p -> Pdt.Leaf p
+    | Node _ -> Node (y, [
+      (Finite d, Leaf (Proof.S (SAgg (op, pdt))));
+      (Complement d, Leaf (V (VAgg (op, pdt))))
+    ])
+  
+end
+
 module MFormula = struct
 
   type tss = timestamp list
@@ -1491,117 +1618,6 @@ let rec match_terms trms ds map =
                                                 | Some z -> (if Dom.equal d z then Some map' else None)))
   | _, _ -> None
 
-let rec agg_cnt mul is_t part =
-  match part with
-  | [] -> Dom.ENat (Nat 0)
-  | (s, _) :: part ->
-    match s with
-    | Setc.Finite d -> let d = Set.to_list d in
-                       if is_t then Dom.enat_add ((Dom.enat_mul (ENat (Nat (List.length d)), mul)), (agg_cnt mul is_t part))
-                       else Dom.enat_add (Dom.enat_mul (List.hd_exn d, mul), (agg_cnt mul is_t part))
-    | Complement _ -> ENat Inf
-
-let rec agg_sum mul is_t part =
-  match part with
-  | [] -> Dom.ENat (Nat 0)
-  | (s, _) :: part ->
-    match s with
-    | Setc.Finite d -> let crnt = List.fold (Set.to_list d) ~init:(Dom.ENat (Nat 0)) ~f:(fun acc v -> Dom.enat_add (acc, v)) in
-                       Dom.enat_add ((Dom.enat_mul (crnt, mul)), (agg_sum mul is_t part))
-    | Complement _ -> ENat Inf
-
-let rec agg_sup mul is_t part =
-  match part with
-  | [] -> Dom.ENat (Nat 0)
-  | (s, _) :: part -> 
-    match s with
-    | Setc.Finite d -> 
-      let crnt = List.fold (Set.to_list d) ~init:(Dom.ENat (Nat 0)) ~f:(fun acc v -> Dom.enat_sup (acc, v)) in
-      Dom.enat_sup (crnt, (agg_sup mul is_t part))
-    | Complement _ -> ENat Inf
-
-let rec agg_min mul is_t part =
-  match part with
-  | [] -> Dom.ENat Inf
-  | (s, _) :: part ->
-    match s with
-    | Setc.Finite d ->
-      let crnt = List.fold (Set.to_list d) ~init:(Dom.ENat Inf) ~f:(fun acc v -> Dom.enat_min (acc, v)) in
-      Dom.enat_min (crnt, (agg_min mul is_t part))
-    | Complement _ -> ENat Inf
-
-let get_agg_op = function
-  | Formula.Cnt -> agg_cnt
-  | Formula.Sum -> agg_sum
-  | Formula.Sup -> agg_sup
-  | Formula.Min -> agg_min
-
-(* Performs aggregation from a partition and returns a PDT node with the result variable and new partition. *)
-let do_agg (v: string) op mul is_t part pdt =
-  let sats = Part.filter part (fun p -> Proof.isS (Pdt.unleaf p)) in
-
-  let agg_op = get_agg_op op in
-  let omega_m = agg_op mul is_t sats in
-  let d = Set.of_list (module Dom) [omega_m] in
-
-  Pdt.Node (v, (Part.map2_dedup (fun p p' ->
-                                  match Pdt.unleaf p, Pdt.unleaf p' with 
-                                  | Proof.S _, S _ 
-                                  | V _, V _ -> true 
-                                  | _ -> false) part
-                                (fun (_, p) -> match (Pdt.unleaf p) with
-                                 | S _ -> (Finite d, Leaf (S (SAgg (op, pdt))))
-                                 | V _ -> (Complement d, Leaf (V (VAgg (op, pdt)))))))
-
-(* Computes the multiplicity from the current multiplicity and assignments s. *)
-let get_mul (mul: Dom.t) (s: Part.sub) = (Dom.ENat (
-  match mul with
-  | ENat en -> (match en, s with Nat n, Setc.Finite s' -> Nat ((Set.length s') * n) | _ -> Inf)
-  | _ -> raise (Invalid_argument "Aggregations only defined for natural numbers")))
-
-(* Transforms a PDT into a valid aggregation PDT. *)
-let agg_hide vars y op t gs pdt =
-  let rec agg_hide_rec vars y op t gs mul pdt =
-    match vars, pdt with
-    (* If it's a leaf, return the leaf unchanged. *)
-    | _, Pdt.Leaf p -> Pdt.Leaf p
-    (* If it's one of the nodes to which to apply the aggregation, transform the node and its partition into the structure of aggregations. *)
-    | [_], Pdt.Node (z, part) -> do_agg y op mul true part (Pdt.Node (z, part))
-    (* Else, it's either a grouping- (g) or non-grouping-aggregation variable (z). *)
-    | x :: vars, Pdt.Node (z, part) ->
-      (* If it's a grouping variable... *)
-      if (not (List.is_empty gs) && String.equal x (List.hd_exn gs)) then
-        let tlgs = List.tl_exn gs in
-        Pdt.Node(z, Part.map2 part (fun (s, p) -> (s,
-          match tlgs, s with
-          (* If it's the last level of grouping variables (tail of gs is empty) and it's a complement, we have VAggG. *)
-          | [], Complement _ -> Node (y, [(Complement (Set.empty (module Dom)), Leaf (V (VAggG pdt)))])
-          (* Otherwise call agg_hide_rec recursively. *)
-          | _ -> agg_hide_rec vars y op t tlgs (get_mul mul s) p)))
-      (* If it's a non-grouping-aggregation variable (z)... *)
-      else
-        (* Compute the result of the aggregation on all it's child nodes. *)
-        let part' = Part.map2 part (fun (s, p) -> (s, agg_hide_rec vars y op t gs (get_mul mul s) p)) in
-        (* Combine the partitions of all child nodes into a single partition. *)
-        let concat_part' = List.fold part' ~init:[] ~f:(fun acc (s, p) -> acc @ (match p with Node (_, part'') -> part'')) in
-
-        (* Compute the aggregation of the combined partition. *)
-        do_agg y op mul false concat_part' (Pdt.Node (z, part)) in
-  agg_hide_rec vars y op t gs (Dom.ENat (Nat 1)) pdt
-
-let agg_default y op pdt =
-  let default = match op with
-  | Formula.Cnt | Sum | Sup -> Dom.ENat (Nat 0)
-  | Min -> ENat Inf in
-  let d = Set.of_list (module Dom) [default] in
-  
-  match pdt with
-  | Pdt.Leaf p -> Pdt.Leaf p
-  | Node _ -> Node (y, [
-    (Finite d, Leaf (Proof.S (SAgg (op, pdt))));
-    (Complement d, Leaf (V (VAgg (op, pdt))))
-  ])
-
 let print_maps maps =
   Stdio.print_endline "> Map:";
   List.iter maps ~f:(fun map -> Map.iteri map ~f:(fun ~key:k ~data:v ->
@@ -1793,12 +1809,13 @@ let rec meval vars ts tp (db: Db.t) is_vis = function
      let muaux_pdt'' = if is_vis then muaux_pdt' else Pdt.reduce Until.equal muaux_pdt' in
      (expls'', MUntil (i, mf1', mf2', (buf2', ntstps'), muaux_pdt''))
   | MAgg (y, op, t, gs, zs, mf) ->
-    let vars = gs @ zs @ [t] in (* Order of vars is not preserved when converting to Set so we create it manually. *)
-    let (expls, mf) = meval vars ts tp db is_vis mf in
-    (* let () = List.iter expls (fun expl -> printf "%s" (Expl.to_string expl)) in *)
+    let vars' = gs @ zs @ [t] in (* The order of vars is necessary for the the Agg.hide function. *)
+    let (expls, mf) = meval vars' ts tp db is_vis mf in
     let expls' = List.map expls ~f:(fun expl ->
-      if (Set.is_empty db && List.is_empty gs) then agg_default y op expl
-      else Pdt.reduce Proof.equal (agg_hide vars y op t gs expl)) in
+      if (Set.is_empty db && List.is_empty gs) then Agg.default y op expl
+      else Agg.hide vars' y op t gs expl) in
+    (* let () = printf "%s\n" (String.concat ~sep:", " vars) in *)
+    (* let () = List.iter expls (fun expl -> printf "%s" (Expl.to_string expl)) in *)
     (expls', mf)
 
 module MState = struct

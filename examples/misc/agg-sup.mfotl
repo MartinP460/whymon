@@ -1,1 +1,1 @@
-sup <- SUP amount;user transaction(id, user, amount, cardId)
+sup <- SUP amount;user. transaction(id, user, amount, cardId)

@@ -1,1 +1,1 @@
-sum <- SUM amount;user, cardId, id transaction(id, user, amount, cardId)
+sum <- SUM amount;user, cardId, id. transaction(id, user, amount, cardId)

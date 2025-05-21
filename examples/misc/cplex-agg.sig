@@ -1,0 +1,1 @@
+trs(id:string, amount:enat)

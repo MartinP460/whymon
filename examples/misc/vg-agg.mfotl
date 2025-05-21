@@ -1,1 +1,1 @@
-s <- SUM x;g1, g2 p(g1, g2, x)
+s <- SUM x;g1, g2. p(g1, g2, x)

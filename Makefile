@@ -43,5 +43,11 @@ test-vg-agg:
 test-dupl-agg:
 	dune build && ./bin/whymon.exe -sig ./examples/misc/dupl-agg.sig -formula ./examples/misc/dupl-agg.mfotl -log ./examples/misc/dupl-agg.log
 
+test-cplex-agg:
+	dune build && ./bin/whymon.exe -sig ./examples/misc/cplex-agg.sig -formula ./examples/misc/cplex-agg.mfotl -log ./examples/misc/cplex-agg.log
+
+test-reorder-agg:
+	dune build && ./bin/whymon.exe -sig ./examples/misc/reorder-agg.sig -formula ./examples/misc/reorder-agg.mfotl -log ./examples/misc/reorder-agg.log
+
 build:
 	dune build
