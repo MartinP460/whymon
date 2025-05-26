@@ -10,11 +10,13 @@
 
 open Base
 
-type tt = TInt | TStr | TFloat | TENat [@@deriving compare, sexp_of, hash]
+type tt = TInt | TStr | TFloat | TENat | TRange [@@deriving compare, sexp_of, hash]
 
 type enat = Nat of int | Inf [@@deriving compare, sexp_of, hash]
 
-type t = Int of int | Str of string | Float of float | ENat of enat [@@deriving compare, sexp_of, hash]
+type range = enat * enat
+
+type t = Int of int | Str of string | Float of float | ENat of enat | Range of range [@@deriving compare, sexp_of, hash]
 
 type comparator_witness
 
@@ -34,7 +36,10 @@ val tt_to_string: tt -> string
 
 val tt_default: tt -> t
 
+val to_enat: t -> enat
+val unENat: t -> enat
 val enat_add: t * t -> t
+val enat_sub: t * t -> t
 val enat_mul: t * t -> t
 val enat_sup: t * t -> t
 val enat_min: t * t -> t

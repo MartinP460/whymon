@@ -49,5 +49,14 @@ test-cplex-agg:
 test-reorder-agg:
 	dune build && ./bin/whymon.exe -sig ./examples/misc/reorder-agg.sig -formula ./examples/misc/reorder-agg.mfotl -log ./examples/misc/reorder-agg.log
 
+test-gt:
+	dune build && ./bin/whymon.exe -sig ./examples/misc/gt.sig -formula ./examples/misc/gt.mfotl -log ./examples/misc/gt.log
+
+test-lt:
+	dune build && ./bin/whymon.exe -sig ./examples/misc/lt.sig -formula ./examples/misc/lt.mfotl -log ./examples/misc/lt.log
+
+test-gt-cplex:
+	dune build && ./bin/whymon.exe -sig ./examples/misc/gt-cplex.sig -formula ./examples/misc/gt-cplex.mfotl -log ./examples/misc/gt-cplex.log
+
 build:
 	dune build

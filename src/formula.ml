@@ -17,6 +17,8 @@ type t =
   | TT
   | FF
   | EqConst of string * Dom.t
+  | GtConst of string * Dom.t
+  | LtConst of string * Dom.t
   | Predicate of string * Term.t list
   | Neg of t
   | And of t * t
@@ -38,6 +40,8 @@ type t =
 let tt = TT
 let ff = FF
 let eqconst x d = EqConst (x, d)
+let gtconst x d = GtConst (x, d)
+let ltconst x d = LtConst (x, d)
 let predicate p_name trms = Predicate (p_name, check_terms p_name trms)
 let neg f = Neg f
 let conj f g = And (f, g)
@@ -65,7 +69,9 @@ let release i f g = Neg (Until (i, Neg (f), Neg (g)))
 let quant_check xs f =
   let rec quant_check_rec x = function
   | TT | FF -> false
-  | EqConst (y, _) -> String.equal x y
+  | EqConst (y, _)
+    | GtConst (y, _)
+    | LtConst (y, _) -> String.equal x y
   | Predicate (_, trms) -> List.exists trms ~f:(fun y -> Term.equal (Var x) y)
   | Exists (_, f)
     | Forall (_, f) -> quant_check_rec x f
@@ -98,7 +104,9 @@ let agg_op_equal = function
 (* Checks whether two operators are directly equal. *)
 let equal x y = match x, y with
   | TT, TT | FF, FF -> true
-  | EqConst (x, _), EqConst (x', _) -> String.equal x x'
+  | EqConst (x, _), EqConst (x', _)
+    | GtConst (x, _), GtConst (x', _)
+    | LtConst (x, _), LtConst (x', _) -> String.equal x x'
   | Predicate (r, trms), Predicate (r', trms') -> String.equal r r' && List.equal Term.equal trms trms'
   | Neg f, Neg f' -> phys_equal f f'
   | And (f, g), And (f', g')
@@ -121,7 +129,9 @@ let equal x y = match x, y with
 (* Returns all free variables in a formula. *)
 let rec fv = function
   | TT | FF -> Set.empty (module String)
-  | EqConst (x, _) -> Set.of_list (module String) [x]
+  | EqConst (x, _)
+    | GtConst (x, _)
+    | LtConst (x, _) -> Set.of_list (module String) [x]
   | Predicate (_, trms) -> Set.of_list (module String) (Pred.Term.fv_list trms)
   | Exists (x, f)
     | Forall (x, f) -> Set.filter (fv f) ~f:(fun y -> not (String.equal x y))
@@ -145,7 +155,9 @@ let check_bindings f =
   let fv_f = fv f in
   let rec check_bindings_rec bound_vars = function
     | TT | FF -> (bound_vars, true)
-    | EqConst _ -> (bound_vars, true)
+    | EqConst _
+      | GtConst _
+      | LtConst _ -> (bound_vars, true)
     | Predicate _ -> (bound_vars, true)
     | Exists (x, _)
       | Forall (x, _) -> ((Set.add bound_vars x), (not (Set.mem fv_f x)) && (not (Set.mem bound_vars x)))
@@ -172,6 +184,8 @@ let rec hp = function
   | TT
     | FF
     | EqConst _
+    | GtConst _
+    | LtConst _
     | Predicate _ -> 0
   | Neg f
     | Exists (_, f)
@@ -195,6 +209,8 @@ let rec hf = function
   | TT
     | FF
     | EqConst _
+    | GtConst _
+    | LtConst _
     | Predicate _ -> 0
   | Neg f
     | Exists (_, f)
@@ -220,6 +236,8 @@ let immediate_subfs = function
   | TT
     | FF
     | EqConst _
+    | GtConst _
+    | LtConst _
     | Predicate _ -> []
   | Neg f
     | Exists (_, f)
@@ -244,7 +262,7 @@ let rec subfs_bfs xs =
 
 (* Returns subformulas of a formula using depth-first search. *)
 let rec subfs_dfs h = match h with
-  | TT | FF | EqConst _ | Predicate _ -> [h]
+  | TT | FF | EqConst _ | GtConst _ | LtConst _ | Predicate _ -> [h]
   | Neg f -> [h] @ (subfs_dfs f)
   | And (f, g) -> [h] @ (subfs_dfs f) @ (subfs_dfs g)
   | Or (f, g) -> [h] @ (subfs_dfs f) @ (subfs_dfs g)
@@ -265,7 +283,7 @@ let rec subfs_dfs h = match h with
 let subfs_scope h i =
   let rec subfs_scope_rec h i =
     match h with
-    | TT | FF | EqConst _ | Predicate _ -> (i, [(i, ([], []))])
+    | TT | FF | EqConst _ | GtConst _ | LtConst _ | Predicate _ -> (i, [(i, ([], []))])
     | Neg f
       | Exists (_, f)
       | Forall (_, f)
@@ -290,7 +308,7 @@ let subfs_scope h i =
 
 (* Returns all predicates in a formula. *)
 let rec preds = function
-  | TT | FF | EqConst _ -> []
+  | TT | FF | EqConst _ | GtConst _ | LtConst _ -> []
   | Predicate (r, trms) -> [Predicate (r, trms)]
   | Neg f | Exists (_, f) | Forall (_, f)
     | Next (_, f) | Prev (_, f)
@@ -311,7 +329,7 @@ let rec preds = function
 (* Returns all predicate names in a formula. *)
 let pred_names f =
   let rec pred_names_rec s = function
-    | TT | FF | EqConst _ -> s
+    | TT | FF | EqConst _ | GtConst _ | LtConst _ -> s
     | Predicate (r, _) -> Set.add s r
     | Neg f | Exists (_, f) | Forall (_, f)
       | Prev (_, f) | Next (_, f)
@@ -333,6 +351,8 @@ let op_to_string = function
   | TT -> Printf.sprintf "⊤"
   | FF -> Printf.sprintf "⊥"
   | EqConst _ -> Printf.sprintf "="
+  | GtConst _ -> Printf.sprintf ">"
+  | LtConst _ -> Printf.sprintf "<"
   | Predicate (r, trms) -> Printf.sprintf "%s(%s)" r (Term.list_to_json_string trms)
   | Neg _ -> Printf.sprintf "¬"
   | And (_, _) -> Printf.sprintf "∧"
@@ -355,6 +375,8 @@ let rec to_string_rec l json = function
   | TT -> Printf.sprintf "⊤"
   | FF -> Printf.sprintf "⊥"
   | EqConst (x, c) -> Printf.sprintf "%s = %s" x (Dom.to_string c)
+  | GtConst (x, c) -> Printf.sprintf "%s > %s" x (Dom.to_string c)
+  | LtConst (x, c) -> Printf.sprintf "%s < %s" x (Dom.to_string c)
   | Predicate (r, trms) -> if json then Printf.sprintf "%s(%s)" r (Term.list_to_json_string trms)
                            else Printf.sprintf "%s(%s)" r (Term.list_to_string trms)
   | Neg f -> Printf.sprintf "¬%a" (fun _ -> to_string_rec 5 json) f
@@ -385,6 +407,10 @@ let rec to_json_rec indent pos f =
   | FF -> Printf.sprintf "%s\"%sformula\": {\n%s\"type\": \"FF\"\n%s}"
             indent pos indent' indent
   | EqConst (x, c) -> Printf.sprintf "%s\"%sformula\": {\n%s\"type\": \"EqConst\",\n%s\"variable\": \"%s\",\n%s\"constant\": \"%s\"\n%s}"
+                         indent pos indent' indent' x indent' (Dom.to_string c) indent
+  | GtConst (x, c) -> Printf.sprintf "%s\"%sformula\": {\n%s\"type\": \"GtConst\",\n%s\"variable\": \"%s\",\n%s\"constant\": \"%s\"\n%s}"
+                         indent pos indent' indent' x indent' (Dom.to_string c) indent
+  | LtConst (x, c) -> Printf.sprintf "%s\"%sformula\": {\n%s\"type\": \"LtConst\",\n%s\"variable\": \"%s\",\n%s\"constant\": \"%s\"\n%s}"
                          indent pos indent' indent' x indent' (Dom.to_string c) indent
   | Predicate (r, trms) -> Printf.sprintf "%s\"%sformula\": {\n%s\"type\": \"Predicate\",\n%s\"name\": \"%s\",\n%s\"terms\": \"%s\"\n%s}"
                              indent pos indent' indent' r indent' (Term.list_to_string trms) indent
@@ -424,6 +450,8 @@ let rec to_latex_rec l = function
   | TT -> Printf.sprintf "\\top"
   | FF -> Printf.sprintf "\\bot"
   | EqConst (x, c) -> Printf.sprintf "%s = %s" (Etc.escape_underscores x) (Dom.to_string c)
+  | GtConst (x, c) -> Printf.sprintf "%s ≻ %s" (Etc.escape_underscores x) (Dom.to_string c)
+  | LtConst (x, c) -> Printf.sprintf "%s ≺ %s" (Etc.escape_underscores x) (Dom.to_string c)
   | Predicate (r, trms) -> Printf.sprintf "%s\\,(%s)" (Etc.escape_underscores r) (Term.list_to_string trms)
   | Neg f -> Printf.sprintf "\\neg %a" (fun _ -> to_latex_rec 5) f
   | And (f, g) -> Printf.sprintf (Etc.paren l 4 "%a \\land %a") (fun _ -> to_latex_rec 4) f (fun _ -> to_latex_rec 4) g

@@ -1390,6 +1390,8 @@ module MFormula = struct
     | MTT
     | MFF
     | MEqConst      of string * Dom.t
+    | MGtConst      of string * Dom.t
+    | MLtConst      of string * Dom.t
     | MPredicate    of string * Term.t list
     | MNeg          of t
     | MAnd          of t * t * (Expl.t, Expl.t) Buf2.t
@@ -1411,7 +1413,9 @@ module MFormula = struct
   (* Returns the type of values in the predicates. *)
   let rec var_tt x = function
     | MTT | MFF -> []
-    | MEqConst _ -> []
+    | MEqConst _
+      | MGtConst _
+      | MLtConst _ -> []
     | MPredicate (r, trms) -> (match (List.findi trms ~f:(fun i y -> Pred.Term.equal (Var x) y)) with
                                | None -> []
                                | Some (i, _) -> let props = Hashtbl.find_exn Pred.Sig.table r in
@@ -1438,6 +1442,8 @@ module MFormula = struct
     | Formula.TT -> MTT
     | Formula.FF -> MFF
     | Formula.EqConst (x, c) -> MEqConst (x, c)
+    | Formula.GtConst (x, c) -> MGtConst (x, c)
+    | Formula.LtConst (x, c) -> MLtConst (x, c)
     | Formula.Predicate (r, trms) -> MPredicate (r, trms)
     | Formula.Neg (f) -> MNeg (init f)
     | Formula.And (f, g) -> MAnd (init f, init g, ([], []))
@@ -1472,7 +1478,9 @@ module MFormula = struct
   let rec equal mf mf' = match mf, mf' with
     | MTT, MTT -> true
     | MFF, MFF -> true
-    | MEqConst (x, c), MEqConst (x', c') -> String.equal x x' && Dom.equal c c'
+    | MEqConst (x, c), MEqConst (x', c')
+      | MGtConst (x, c), MGtConst (x', c')
+      | MLtConst (x, c), MLtConst (x', c') -> String.equal x x' && Dom.equal c c'
     | MPredicate (r, trms), MPredicate (r', trms') ->
        let trms_equal = match List.for_all2 trms trms' ~f:Term.equal with
          | Ok b -> b
@@ -1523,6 +1531,8 @@ module MFormula = struct
     | MTT -> Printf.sprintf "⊤"
     | MFF -> Printf.sprintf "⊥"
     | MEqConst (x, c) -> Printf.sprintf "%s = %s" x (Dom.to_string c)
+    | MGtConst (x, c) -> Printf.sprintf "%s < %s" x (Dom.to_string c)
+    | MLtConst (x, c) -> Printf.sprintf "%s > %s" x (Dom.to_string c)
     | MPredicate (r, trms) -> Printf.sprintf "%s(%s)" r (Term.list_to_string trms)
     | MNeg f -> Printf.sprintf "¬%a" (fun x -> to_string_rec 5) f
     | MAnd (f, g, _) -> Printf.sprintf (Etc.paren l 4 "%a ∧ %a") (fun x -> to_string_rec 4) f (fun x -> to_string_rec 4) g
@@ -1650,6 +1660,24 @@ let rec meval vars ts tp (db: Db.t) is_vis = function
      let expl = Pdt.Node (x, [(Setc.Complement (Set.of_list (module Dom) [d]), l2);
                               (Setc.Finite (Set.of_list (module Dom) [d]), l1)]) in
      ([expl], MEqConst (x, d))
+  | MGtConst (x, d) ->
+     let d' = Dom.to_enat d in
+     let dgt = Dom.Range (Dom.unENat (Dom.enat_add (ENat d', ENat (Nat 1))), Inf) in
+
+     let l1 = Pdt.Leaf (Proof.S (SGtConst (tp, x, dgt))) in
+     let l2 = Pdt.Leaf (Proof.V (VGtConst (tp, x, dgt))) in
+     let expl = Pdt.Node (x, [(Setc.Complement (Set.of_list (module Dom) [dgt]), l2);
+                              (Setc.Finite (Set.of_list (module Dom) [dgt]), l1)]) in
+     ([expl], MGtConst (x, d))
+  | MLtConst (x, d) ->
+     let d' = Dom.to_enat d in
+     let dlt = Dom.Range (Nat 0, Dom.unENat (Dom.enat_sub (Dom.ENat d', Dom.ENat (Nat 1)))) in
+
+     let l1 = Pdt.Leaf (Proof.S (SLtConst (tp, x, dlt))) in
+     let l2 = Pdt.Leaf (Proof.V (VLtConst (tp, x, dlt))) in
+     let expl = Pdt.Node (x, [(Setc.Complement (Set.of_list (module Dom) [dlt]), l2);
+                              (Setc.Finite (Set.of_list (module Dom) [dlt]), l1)]) in
+     ([expl], MLtConst (x, d))
   | MPredicate (r, trms) ->
      let db' = Set.filter db ~f:(fun evt -> String.equal r (fst(evt))) in
      let maps = Set.fold db' ~init:[] ~f:(fun acc evt -> match_terms trms (snd evt) (Map.empty (module String)) :: acc) in

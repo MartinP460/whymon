@@ -70,6 +70,8 @@ module Proof : sig
   type sp =
     | STT of int
     | SEqConst of int * string * Dom.t
+    | SGtConst of int * string * Dom.t
+    | SLtConst of int * string * Dom.t
     | SPred of int * string * Term.t list
     | SNeg of vp
     | SOrL of sp
@@ -94,6 +96,8 @@ module Proof : sig
   and vp =
     | VFF of int
     | VEqConst of int * string * Dom.t
+    | VGtConst of int * string * Dom.t
+    | VLtConst of int * string * Dom.t
     | VPred of int * string * Term.t list
     | VNeg of sp
     | VOr of vp * vp

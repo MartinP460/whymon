@@ -318,6 +318,8 @@ module Proof = struct
   type sp =
     | STT of int
     | SEqConst of int * string * Dom.t
+    | SGtConst of int * string * Dom.t
+    | SLtConst of int * string * Dom.t
     | SPred of int * string * Term.t list
     | SNeg of vp
     | SOrL of sp
@@ -342,6 +344,8 @@ module Proof = struct
   and vp =
     | VFF of int
     | VEqConst of int * string * Dom.t
+    | VGtConst of int * string * Dom.t
+    | VLtConst of int * string * Dom.t
     | VPred of int * string * Term.t list
     | VNeg of sp
     | VOr of vp * vp
@@ -380,8 +384,10 @@ module Proof = struct
   (* Checks whether two satisfaction proof objects are equal. *)
   let rec s_equal x y = match x, y with
     | STT tp, STT tp' -> Int.equal tp tp'
-    | SEqConst (tp, x, c), SEqConst (tp', x', c') ->
-       Int.equal tp tp' && String.equal x x' && Dom.equal c c'
+    | SEqConst (tp, x, c), SEqConst (tp', x', c')
+      | SGtConst (tp, x, c), SGtConst (tp', x', c')
+      | SLtConst (tp, x, c), SLtConst (tp', x', c') ->
+        Int.equal tp tp' && String.equal x x' && Dom.equal c c'
     | SPred (tp, r, terms), SPred (tp', r', terms') ->
        Int.equal tp tp' && String.equal r r' &&
          Int.equal (List.length terms) (List.length terms') &&
@@ -421,7 +427,9 @@ module Proof = struct
   (* Checks whether two violation proof objects are equal. *)
   and v_equal x y = match x, y with
     | VFF tp, VFF tp' -> Int.equal tp tp'
-    | VEqConst (tp, x, c), VEqConst (tp', x', c') -> Int.equal tp tp' && String.equal x x' && Dom.equal c c'
+    | VEqConst (tp, x, c), VEqConst (tp', x', c')
+      | VGtConst (tp, x, c), VGtConst (tp', x', c')
+      | VLtConst (tp, x, c), VLtConst (tp', x', c') -> Int.equal tp tp' && String.equal x x' && Dom.equal c c'
     | VPred (tp, r, terms), VPred (tp', r', terms') ->
        Int.equal tp tp' && String.equal r r' &&
          Int.equal (List.length terms) (List.length terms') &&
@@ -533,8 +541,10 @@ module Proof = struct
   (* Returns the time-point of a satisfaction proof object. *)
   let rec s_at = function
     | STT tp -> tp
-    | SEqConst (tp, _, _) -> tp
-    | SPred (tp, _, _) -> tp
+    | SEqConst (tp, _, _)
+      | SGtConst (tp, _, _)
+      | SLtConst (tp, _, _)
+      | SPred (tp, _, _) -> tp
     | SNeg vp -> v_at vp
     | SOrL sp1 -> s_at sp1
     | SOrR sp2 -> s_at sp2
@@ -560,8 +570,10 @@ module Proof = struct
   (* Returns the time-point of a violation proof object. *)
   and v_at = function
     | VFF tp -> tp
-    | VEqConst (tp, _, _) -> tp
-    | VPred (tp, _, _) -> tp
+    | VEqConst (tp, _, _)
+      | VGtConst (tp, _, _)
+      | VLtConst (tp, _, _)
+      | VPred (tp, _, _) -> tp
     | VNeg sp -> s_at sp
     | VOr (vp1, _) -> v_at vp1
     | VAndL vp1 -> v_at vp1
@@ -611,6 +623,8 @@ module Proof = struct
     match p with
     | STT i -> Printf.sprintf "%strue{%d}" indent i
     | SEqConst (tp, x, c) -> Printf.sprintf "%sSEqConst(%d, %s, %s)" indent tp x (Dom.to_string c)
+    | SGtConst (tp, x, c) -> Printf.sprintf "%sSGtConst(%d, %s, %s)" indent tp x (Dom.to_string c)
+    | SLtConst (tp, x, c) -> Printf.sprintf "%sSLtConst(%d, %s, %s)" indent tp x (Dom.to_string c)
     | SPred (tp, r, trms) -> Printf.sprintf "%sSPred(%d, %s, [%s])" indent tp r (Term.list_to_string trms)
     | SNeg vp -> Printf.sprintf "%sSNeg{%d}\n%s" indent (s_at p) (v_to_string indent' vp)
     | SOrL sp1 -> Printf.sprintf "%sSOrL{%d}\n%s" indent (s_at p) (s_to_string indent' sp1)
@@ -647,6 +661,8 @@ module Proof = struct
     match p with
     | VFF i -> Printf.sprintf "%sfalse{%d}" indent i
     | VEqConst (tp, x, c) -> Printf.sprintf "%sVEqConst(%d, %s, %s)" indent tp x (Dom.to_string c)
+    | VGtConst (tp, x, c) -> Printf.sprintf "%sVGtConst(%d, %s, %s)" indent tp x (Dom.to_string c)
+    | VLtConst (tp, x, c) -> Printf.sprintf "%sVLtConst(%d, %s, %s)" indent tp x (Dom.to_string c)
     | VPred (tp, r, trms) -> Printf.sprintf "%sVPred(%d, %s, [%s])" indent tp r (Term.list_to_string trms)
     | VNeg sp -> Printf.sprintf "%sVNeg{%d}\n%s" indent (v_at p) (s_to_string indent' sp)
     | VOr (vp1, vp2) -> Printf.sprintf "%sVOr{%d}\n%s\n%s" indent (v_at p) (v_to_string indent' vp1) (v_to_string indent' vp2)
@@ -912,6 +928,8 @@ module Proof = struct
     let rec s = function
       | STT _ -> 1
       | SEqConst _ -> 1
+      | SGtConst _ -> 1
+      | SLtConst _ -> 1
       | SPred _ -> 1
       | SNeg vp -> 1 + v vp
       | SOrL sp1 -> 1 + s sp1
@@ -936,6 +954,8 @@ module Proof = struct
     and v = function
       | VFF _ -> 1
       | VEqConst _ -> 1
+      | VGtConst _ -> 1
+      | VLtConst _ -> 1
       | VPred _ -> 1
       | VNeg sp -> 1 + s sp
       | VOr (vp1, vp2) -> 1 + v vp1 + v vp2

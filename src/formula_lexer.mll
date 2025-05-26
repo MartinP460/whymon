@@ -39,6 +39,8 @@ rule token = parse
   | "false" | "⊥"                                 { debug "FALSE"; FALSE }
   | "true" | "⊤"                                  { debug "TRUE"; TRUE }
   | "="                                           { debug "EQCONST"; EQCONST }
+  | ">"                                           { debug "GTCONST"; GTCONST }
+  | "<"                                           { debug "LTCONST"; LTCONST }
   | "¬" | "NOT"                                   { debug "NEG"; NEG }
   | "∧" | "AND"                                   { debug "AND"; AND }
   | "∨" | "OR"                                    { debug "OR"; OR }
