@@ -62,6 +62,8 @@ module Pdt : sig
   val split_list_reduce: ('a -> 'a -> bool) -> 'a list t -> 'a t list
   val hide_reduce: ('a -> 'a -> bool) -> string list -> ('b -> 'a) -> ('b Part.t -> 'a) -> 'b t -> 'a t
 
+  val reorder: (string list) -> (string list ) -> 'a t -> 'a t
+
 end
 
 

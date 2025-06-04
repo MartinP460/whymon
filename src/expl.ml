@@ -133,6 +133,15 @@ module Part = struct
 
   let split_list_dedup p_eq part = List.map (split_list part) ~f:(dedup p_eq)
 
+  let rec join_parts ps = match ps with 
+    | [] -> trivial []
+    | [p] -> List.map ~f:(fun (sub, x) -> (sub, [x])) p
+    | p :: ps -> merge2 (fun x y -> x :: y) p (join_parts ps)
+
+  let merge_parts f ps = 
+    let joint_parts = List.map ~f:(fun (sub, xs) -> (sub, f xs)) (join_parts ps) in
+      joint_parts
+
 end
 
 (* Partioned decision tree. *)
@@ -244,7 +253,59 @@ module Pdt = struct
   let rec fst_leaf = function
     | Leaf l -> l
     | Node (_, part) -> fst_leaf (Part.hd part)
+
+  let var = function
+  | Node (x, _) -> x
+  | Leaf _ -> raise (Invalid_argument "var is underfined for leafs") 
   
+  let part = function
+  | Node (_, p) -> p
+  | Leaf _ -> raise (Invalid_argument "part is undefined for leafs")
+
+  let rec papply_list f xs ys = match xs, ys with 
+    (* Base case: If the first list (xs) is empty apply f to ys *)
+    | [], _ -> f ys
+    | None :: xs, y :: ys -> papply_list (fun zs -> f (y :: zs)) xs ys 
+    | Some x :: xs, ys -> papply_list (fun zs -> f (x :: zs)) xs ys 
+    | _, _ -> raise (Invalid_argument "underfined if the ys list is empty")
+  
+  let is_leaf = function
+    | Leaf _ -> true
+    | Node _ -> false
+
+  (* Courtesy of Dmitriy Traytel and Rosa Meyer. *)
+  let rec applyN vars f pdts = match vars with
+  | z :: vars -> 
+    let f' = papply_list f (List.map ~f:(fun pdt -> if is_leaf pdt then Some (unleaf pdt) else None) pdts) in
+    let nodes = List.filter ~f:(fun pdt -> not (is_leaf pdt)) pdts in
+    let other_nodes = List.map ~f:(fun pdt -> if String.equal (var pdt) z then None else Some pdt) nodes in
+    let z_parts = List.map (List.filter ~f:(fun pdt -> String.equal (var pdt) z) nodes) ~f:(part)
+    in if List.is_empty z_parts then applyN vars f' nodes 
+      else Node (z, (Part.merge_parts (fun pdts -> papply_list (applyN vars f') other_nodes pdts) z_parts))
+  | [] -> Leaf (f (List.map pdts unleaf))
+
+  let rec hide2 vars z f_leaf f_node = function
+  | Leaf p -> Leaf (f_leaf p)
+  | Node (y, part) ->
+    match vars with
+    | x :: xs ->
+      if (String.equal x z) then
+        if (String.equal x y) then
+          let doms, pdts = List.unzip part in
+          applyN xs (fun ps -> f_node (List.zip_exn doms ps)) pdts
+        else apply1 xs f_leaf (Node (y, part))
+      else (if (String.equal x y) then 
+        Node (y, Part.map part (hide2 xs z f_leaf f_node)) 
+      else hide2 xs z f_leaf f_node (Node (y, part)))
+    | _ -> raise (Invalid_argument "vars is empty while PDT is not")
+
+  let rec aux src = function
+  | [] -> fun pdt -> pdt
+  | x :: xs -> fun pdt -> aux (List.filter src (fun x' -> not (String.equal x x'))) xs (hide2 src x (fun pdt -> pdt) (fun part -> Node (x, part)) pdt)
+
+  let reorder src trg pdt =
+    unleaf (aux src (List.rev trg) (apply1 src (fun p -> Leaf p) pdt))
+
   let rec fold pdt init f = match pdt with
     | Leaf l -> f init l
     | Node (_, part) -> Part.fold_left part init (fun acc elm -> fold elm acc f)

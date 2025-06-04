@@ -138,6 +138,10 @@ module T = struct
     | ENat en -> en
     | _ -> raise (Invalid_argument "unENat is not defined for non-natural numbers")
 
+  let unNat = function
+    | Nat n -> n
+    | _ -> raise (Invalid_argument "unNat is not defined for non-natural numbers")
+
   let enat_add = function
     | ENat (Nat n), ENat (Nat n') -> ENat (Nat (n + n'))
     | ENat _, ENat _ -> ENat Inf

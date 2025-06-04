@@ -58,5 +58,8 @@ test-lt:
 test-gt-cplex:
 	dune build && ./bin/whymon.exe -sig ./examples/misc/gt-cplex.sig -formula ./examples/misc/gt-cplex.mfotl -log ./examples/misc/gt-cplex.log
 
+test-abc-agg:
+	dune build && ./bin/whymon.exe -sig ./examples/misc/abc-agg.sig -formula ./examples/misc/abc-agg.mfotl -log ./examples/misc/abc-agg.log
+
 build:
 	dune build

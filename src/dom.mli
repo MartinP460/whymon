@@ -38,6 +38,7 @@ val tt_default: tt -> t
 
 val to_enat: t -> enat
 val unENat: t -> enat
+val unNat: enat -> int
 val enat_add: t * t -> t
 val enat_sub: t * t -> t
 val enat_mul: t * t -> t

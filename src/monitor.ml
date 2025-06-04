@@ -1661,22 +1661,22 @@ let rec meval vars ts tp (db: Db.t) is_vis = function
                               (Setc.Finite (Set.of_list (module Dom) [d]), l1)]) in
      ([expl], MEqConst (x, d))
   | MGtConst (x, d) ->
-     let d' = Dom.to_enat d in
-     let dgt = Dom.Range (Dom.unENat (Dom.enat_add (ENat d', ENat (Nat 1))), Inf) in
+    let d' = Dom.unNat (Dom.to_enat d) in
+    let dgt = List.init (d' + 1) ~f:(fun x -> Dom.ENat (Nat x)) in
 
-     let l1 = Pdt.Leaf (Proof.S (SGtConst (tp, x, dgt))) in
-     let l2 = Pdt.Leaf (Proof.V (VGtConst (tp, x, dgt))) in
-     let expl = Pdt.Node (x, [(Setc.Complement (Set.of_list (module Dom) [dgt]), l2);
-                              (Setc.Finite (Set.of_list (module Dom) [dgt]), l1)]) in
-     ([expl], MGtConst (x, d))
+    let l1 = Pdt.Leaf (Proof.V (VGtConst (tp, x, d))) in
+    let l2 = Pdt.Leaf (Proof.S (SGtConst (tp, x, d))) in
+    let expl = Pdt.Node (x, [(Setc.Complement (Set.of_list (module Dom) dgt), l2);
+                             (Setc.Finite (Set.of_list (module Dom) dgt), l1)]) in
+    ([expl], MGtConst (x, d))
   | MLtConst (x, d) ->
-     let d' = Dom.to_enat d in
-     let dlt = Dom.Range (Nat 0, Dom.unENat (Dom.enat_sub (Dom.ENat d', Dom.ENat (Nat 1)))) in
+     let d' = Dom.unNat (Dom.to_enat d) in
+     let dlt = List.init d' ~f:(fun x -> Dom.ENat (Nat x)) in
 
-     let l1 = Pdt.Leaf (Proof.S (SLtConst (tp, x, dlt))) in
-     let l2 = Pdt.Leaf (Proof.V (VLtConst (tp, x, dlt))) in
-     let expl = Pdt.Node (x, [(Setc.Complement (Set.of_list (module Dom) [dlt]), l2);
-                              (Setc.Finite (Set.of_list (module Dom) [dlt]), l1)]) in
+     let l1 = Pdt.Leaf (Proof.S (SLtConst (tp, x, d))) in
+     let l2 = Pdt.Leaf (Proof.V (VLtConst (tp, x, d))) in
+     let expl = Pdt.Node (x, [(Setc.Complement (Set.of_list (module Dom) dlt), l2);
+                              (Setc.Finite (Set.of_list (module Dom) dlt), l1)]) in
      ([expl], MLtConst (x, d))
   | MPredicate (r, trms) ->
      let db' = Set.filter db ~f:(fun evt -> String.equal r (fst(evt))) in
@@ -1753,6 +1753,7 @@ let rec meval vars ts tp (db: Db.t) is_vis = function
      (f_expls, MNext (i, mf', first, tss'))
   | MOnce (i, mf, tstps, moaux_pdt) ->
      let (expls, mf') = meval vars ts tp db is_vis mf in
+     let () = printf "Once: %s\n" (String.concat ~sep:", " vars) in
      let ((moaux_pdt', expls'), buf', tstps') =
        Buft.take
          (fun expl ts tp (aux_pdt, es) ->
@@ -1841,10 +1842,10 @@ let rec meval vars ts tp (db: Db.t) is_vis = function
     let (expls, mf) = meval vars' ts tp db is_vis mf in
     let expls' = List.map expls ~f:(fun expl ->
       if (Set.is_empty db && List.is_empty gs) then Agg.default y op expl
-      else Agg.hide vars' y op t gs expl) in
+      else Pdt.reorder (gs @ [y]) vars (Agg.hide vars' y op t gs expl)) in
     (* let () = printf "%s\n" (String.concat ~sep:", " vars) in *)
     (* let () = List.iter expls (fun expl -> printf "%s" (Expl.to_string expl)) in *)
-    (expls', mf)
+    (expls', MAgg (y, op, t, gs, zs, mf))
 
 module MState = struct
 

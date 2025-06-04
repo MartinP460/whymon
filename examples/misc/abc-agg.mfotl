@@ -1,0 +1,1 @@
+FORALL u. (((n <- CNT a;u. (⧫[0, 30] trs(u, c, a))) AND n > 1) → ((s <- SUM a;u. (⧫[0, 30] trs(u, c, a))) → s < 1000))

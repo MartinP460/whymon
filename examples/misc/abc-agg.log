@@ -1,0 +1,3 @@
+@0 trs(Alice, EUR, 300) trs(Bob, EUR, 750)
+@20 trs(Charlie, USD, 150)
+@25 trs(Bob, EUR, 500)

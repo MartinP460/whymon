@@ -1,0 +1,1 @@
+trs(user:string, currency:string, amount:enat)
