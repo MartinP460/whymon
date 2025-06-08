@@ -123,7 +123,7 @@ module Proof : sig
     | VHistorically of int * vp
     | VAlways of int * vp
     | VAgg of Formula.agg_op * p Pdt.t
-    | VAggG of p Pdt.t
+    | VAggG of vp Pdt.t
     | VSinceOut of int
     | VSince of int * vp * vp Fdeque.t
     | VSinceInf of int * int * vp Fdeque.t

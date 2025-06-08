@@ -430,7 +430,7 @@ module Proof = struct
     | VHistorically of int * vp
     | VAlways of int * vp
     | VAgg of Formula.agg_op * p Pdt.t 
-    | VAggG of p Pdt.t
+    | VAggG of vp Pdt.t
     | VSinceOut of int
     | VSince of int * vp * vp Fdeque.t
     | VSinceInf of int * int * vp Fdeque.t
@@ -527,7 +527,7 @@ module Proof = struct
     | VHistorically (tp, _), VHistorically (tp', _)
       | VAlways (tp, _), VAlways (tp', _) -> Int.equal tp tp'
     | VAgg (op, pdt), VAgg (op', pdt') -> Formula.agg_op_equal (op, op') && Pdt.equal (fun p p' -> equal p p') pdt pdt'
-    | VAggG (pdt), VAggG (pdt') -> Pdt.equal (fun p p' -> equal p p') pdt pdt'
+    | VAggG (pdt), VAggG (pdt') -> Pdt.equal (fun vp vp' -> v_equal vp vp') pdt pdt'
     | VSince (tp, vp1, vp2s), VSince (tp', vp1', vp2s')
       | VUntil (tp, vp1, vp2s), VUntil (tp', vp1', vp2s') ->
        Int.equal tp tp' && v_equal vp1 vp1' &&
@@ -655,8 +655,8 @@ module Proof = struct
     | VOnce (tp, _, _) -> tp
     | VEventually (tp, _, _) -> tp
     | VHistorically (tp, _) -> tp
-    | VAggG (pdt)
     | VAgg (_, pdt) -> p_at (Pdt.fst_leaf pdt)
+    | VAggG (pdt) -> v_at (Pdt.fst_leaf pdt)
     | VAlways (tp, _) -> tp
     | VSinceOut tp -> tp
     | VSince (tp, _, _) -> tp
@@ -753,7 +753,7 @@ module Proof = struct
     | VHistorically (_, vp) -> Printf.sprintf "%sVHistorically{%d}\n%s" indent (v_at p) (v_to_string indent' vp)
     | VAlways (_, vp) -> Printf.sprintf "%sVAlways{%d}\n%s" indent (v_at p) (v_to_string indent' vp)
     | VAgg (op, pdt) -> Printf.sprintf "%sVAgg{%s, PDT: \n\n%s\n%s}\n" indent (Formula.agg_op_to_string op) (Pdt.to_string to_string indent pdt) indent
-    | VAggG (pdt) -> Printf.sprintf "%sVAggG{PDT: \n\n%s\n%s}\n" indent (Pdt.to_string to_string indent pdt) indent
+    | VAggG (pdt) -> Printf.sprintf "%sVAggG{PDT: \n\n%s\n%s}\n" indent (Pdt.to_string v_to_string indent pdt) indent
     | VSinceOut i -> Printf.sprintf "%sVSinceOut{%d}" indent i
     | VSince (_, vp1, vp2s) -> Printf.sprintf "%sVSince{%d}\n%s\n%s" indent (v_at p) (v_to_string indent' vp1)
                                  (Etc.deque_to_string indent' v_to_string vp2s)
@@ -1039,8 +1039,8 @@ module Proof = struct
       | VEventually (_, _, vp1s) -> 1 + sum v vp1s
       | VHistorically (_, vp1) -> 1 + v vp1
       | VAlways (_, vp1) -> 1 + v vp1
-      | VAgg (_, pdt)
-      | VAggG (pdt) -> 1 + (Pdt.fold pdt 0 (fun a spvp -> a + p spvp))
+      | VAgg (_, pdt) -> 1 + (Pdt.fold pdt 0 (fun a spvp -> a + p spvp))
+      | VAggG (pdt) -> 1 + (Pdt.fold pdt 0 (fun a spvp -> a + v spvp))
       | VSinceOut _ -> 1
       | VSince (_, vp1, vp2s) -> 1 + v vp1 + sum v vp2s
       | VSinceInf (_, _, vp2s) -> 1 + sum v vp2s

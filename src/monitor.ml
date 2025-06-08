@@ -1327,12 +1327,15 @@ module Agg = struct
   (* Removes g-level nodes from a PDT of complements. *)
   let rec filter_g gs pdt =
     match pdt with
-    | Pdt.Leaf p -> Pdt.Leaf p
+    | Pdt.Leaf p ->
+      (match p with 
+      | Proof.S _ -> raise (Invalid_argument "Element in leaf in complement of grouping variable is not a violation proof object.") 
+      | V vp -> Pdt.Leaf vp)
     | Node (x, part) ->
         if (List.exists gs (fun g -> String.equal x g)) then
           filter_g (List.filter gs (fun g -> not (String.equal x g))) (snd (List.hd_exn part))
         else
-          Node (x, part)
+          Node (x, Part.map part (fun pdt' -> filter_g gs pdt'))
   
   (* Transforms a PDT into a valid aggregation PDT. *)
   let hide vars y op t gs pdt =
@@ -1662,7 +1665,7 @@ let rec meval vars ts tp (db: Db.t) is_vis = function
      ([expl], MEqConst (x, d))
   | MGtConst (x, d) ->
     let d' = Dom.unNat (Dom.to_enat d) in
-    let dgt = List.init (d' + 1) ~f:(fun x -> Dom.ENat (Nat x)) in
+    let dgt = List.init (d' + 1) ~f:(fun x -> Dom.ENat (Nat x)) in (* Init creates a list up to n-1. *)
 
     let l1 = Pdt.Leaf (Proof.V (VGtConst (tp, x, d))) in
     let l2 = Pdt.Leaf (Proof.S (SGtConst (tp, x, d))) in
