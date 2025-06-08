@@ -399,7 +399,7 @@ module Proof = struct
     | SHistorically of int * int * sp Fdeque.t
     | SHistoricallyOut of int
     | SAlways of int * int * sp Fdeque.t
-    | SAgg of Formula.agg_op * p Pdt.t (* Change this *)
+    | SAgg of Formula.agg_op * p Pdt.t
     | SSince of sp * sp Fdeque.t
     | SUntil of sp * sp Fdeque.t
   and vp =
