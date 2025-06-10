@@ -1302,14 +1302,14 @@ module Agg = struct
     | Formula.Min -> agg_min
 
   (* Performs aggregation from a partition and returns a PDT node with the result variable and new partition. *)
-  let do_agg (v: string) op mul is_t part pdt =
+  let do_agg (y: string) op mul is_t part pdt =
     let sats = Part.filter part (fun p -> Proof.isS (Pdt.unleaf p)) in
   
     let agg_op = get_agg_op op in
     let omega_m = agg_op mul is_t sats in
     let d = Set.of_list (module Dom) [omega_m] in
   
-    Pdt.Node (v, (Part.map2_dedup (fun p p' ->
+    Pdt.Node (y, (Part.map2_dedup (fun p p' ->
                                     match Pdt.unleaf p, Pdt.unleaf p' with 
                                     | Proof.S _, S _ 
                                     | V _, V _ -> true 
@@ -1341,8 +1341,6 @@ module Agg = struct
   let hide vars y op t gs pdt =
     let rec hide_rec vars y op t gs mul pdt =
       match vars, pdt with
-      (* If it's a leaf, return the leaf unchanged. *)
-      | _, Pdt.Leaf p -> Pdt.Leaf p
       (* If it's one of the nodes to which to apply the aggregation, transform the node and its partition into the structure of aggregations. *)
       | [_], Pdt.Node (z, part) -> do_agg y op mul true part (Pdt.Node (z, part))
       (* Else, it's either a grouping- (g) or non-grouping-aggregation variable (z). *)
